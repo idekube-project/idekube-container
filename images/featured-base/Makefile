@@ -28,6 +28,20 @@ prepare: $(BUILDER)/build.py
 	@cd third_party/frontend && npm ci && npm run build
 	@mkdir -p frontend
 	@ln -sfn ../third_party/frontend/dist frontend/dist
+	@# QEMU builder: scripts, manifests, artifacts, tools
+	@mkdir -p scripts
+	@ln -sfn ../third_party/qemu-builder/scripts/shell scripts/shell
+	@mkdir -p manifests/qemu/featured
+	@ln -sfn ../../../third_party/qemu-builder/manifests/qemu/Dockerfile manifests/qemu/Dockerfile
+	@ln -sfn ../../../third_party/qemu-builder/manifests/qemu/Dockerfile.engine manifests/qemu/Dockerfile.engine
+	@ln -sfn ../../../qemu/base manifests/qemu/featured/base
+	@mkdir -p artifacts/qemu
+	@ln -sfn ../../third_party/qemu-builder/artifacts/configs artifacts/qemu/configs
+	@ln -sfn ../../third_party/qemu-builder/artifacts/rootfs artifacts/qemu/rootfs
+	@ln -sfn ../../third_party/qemu-builder/artifacts/startup-scripts artifacts/qemu/startup-scripts
+	@ln -sfn ../../third_party/qemu-builder/artifacts/featured artifacts/qemu/featured
+	@mkdir -p tools/utility
+	@ln -sfn ../../third_party/qemu-builder/tools/utility/cloud-localds tools/utility/cloud-localds
 
 # --- Docker targets ---
 build: prepare

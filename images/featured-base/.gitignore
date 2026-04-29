@@ -2,7 +2,16 @@
 shared-install-scripts
 artifacts/docker/rootfs
 tools/idekube-healthcheck
+tools/utility
 frontend/dist
+scripts/shell
+manifests/qemu/Dockerfile
+manifests/qemu/Dockerfile.engine
+manifests/qemu/featured/base
+artifacts/qemu/configs
+artifacts/qemu/rootfs
+artifacts/qemu/startup-scripts
+artifacts/qemu/featured
 
 # Build cache
 .cache/
