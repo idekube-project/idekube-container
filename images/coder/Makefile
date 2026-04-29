@@ -1,4 +1,4 @@
-.PHONY: prepare build buildx publishx build-all publishx-all discover
+.PHONY: prepare build buildx publishx discover
 
 -include .env
 export
@@ -7,13 +7,11 @@ BUILDER      := third_party/docker-builder
 BUILD_PY     := python3 $(BUILDER)/build.py --project-root=.
 BRANCH       ?= coder/conda
 LINEUP       ?= base
-MAX_PARALLEL ?= 2
 
 $(BUILDER)/build.py:
 	git submodule update --init --recursive
 
 prepare: $(BUILDER)/build.py
-	@ln -sfn ../third_party/artifacts/install-scripts shared-install-scripts
 
 build: prepare
 	@$(BUILD_PY) build $(BRANCH) --lineup=$(LINEUP)
@@ -23,12 +21,6 @@ buildx: prepare
 
 publishx: prepare
 	@$(BUILD_PY) publishx $(BRANCH) --lineup=$(LINEUP)
-
-build-all: prepare
-	@$(BUILD_PY) build-all --lineup=$(LINEUP) --parallel=$(MAX_PARALLEL)
-
-publishx-all: prepare
-	@$(BUILD_PY) publishx-all --lineup=$(LINEUP) --parallel=$(MAX_PARALLEL)
 
 discover: prepare
 	@$(BUILD_PY) discover
