@@ -13,7 +13,6 @@ $(BUILDER)/build.py:
 	git submodule update --init --recursive
 
 prepare: $(BUILDER)/build.py
-	@ln -sfn ../third_party/artifacts/install-scripts shared-install-scripts
 
 build: prepare
 	@$(BUILD_PY) build $(BRANCH) --lineup=$(LINEUP)
