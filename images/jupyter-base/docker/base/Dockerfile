@@ -28,19 +28,19 @@ RUN if [ ${USE_APT_MIRROR} != "false" ]; then \
     fi;
 
 # built-in packages
-RUN --mount=type=bind,source=shared-install-scripts/setup-packages.sh,target=/tmp/setup-packages.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-packages.sh,target=/tmp/setup-packages.sh \
     bash /tmp/setup-packages.sh
 
 # tini to fix subreap
-RUN --mount=type=bind,source=shared-install-scripts/setup-tini.sh,target=/tmp/setup-tini.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-tini.sh,target=/tmp/setup-tini.sh \
     export TINI_VERSION=${TINI_VERSION}; bash /tmp/setup-tini.sh
 
 # Setup the websocat and ssh
-RUN --mount=type=bind,source=shared-install-scripts/setup-websocat-ssh.sh,target=/tmp/setup-websocat-ssh.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-websocat-ssh.sh,target=/tmp/setup-websocat-ssh.sh \
     export WEBSOCAT_VERSION=${WEBSOCAT_VERSION}; bash /tmp/setup-websocat-ssh.sh
 
 # Install Miniconda
-RUN --mount=type=bind,source=shared-install-scripts/setup-miniconda.sh,target=/tmp/setup-miniconda.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-miniconda.sh,target=/tmp/setup-miniconda.sh \
     export MINICONDA_VERSION=${MINICONDA_VERSION}; bash /tmp/setup-miniconda.sh
 ENV PATH=/opt/miniconda3/bin:$PATH
 
@@ -52,7 +52,7 @@ RUN mkdir -p /usr/local/share/jupyter/lab/settings && \
     echo '{"@jupyterlab/apputils-extension:notification":{"fetchNews":"false"},"@jupyterlab/apputils-extension:announcements":{"checkForUpdates":false}}' > /usr/local/share/jupyter/lab/settings/overrides.json
 
 # Create the IDEKube user with home and bash shell
-RUN --mount=type=bind,source=shared-install-scripts/setup-user.sh,target=/tmp/setup-user.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-user.sh,target=/tmp/setup-user.sh \
     bash /tmp/setup-user.sh
 ENV SHELL=/bin/bash \
     USERNAME=idekube \
