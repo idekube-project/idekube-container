@@ -13,27 +13,27 @@
 [submodule "qemu-builder"]
 	path = qemu-builder
 	url = https://github.com/idekube-project/idekube-container-qemu-builder.git
-[submodule "featured-base"]
-	path = featured-base
+[submodule "images/featured-base"]
+	path = images/featured-base
 	url = https://github.com/idekube-project/idekube-container-featured-base.git
-[submodule "featured"]
-	path = featured
+[submodule "images/featured"]
+	path = images/featured
 	url = https://github.com/idekube-project/idekube-container-featured.git
-[submodule "coder-base"]
-	path = coder-base
+[submodule "images/coder-base"]
+	path = images/coder-base
 	url = https://github.com/idekube-project/idekube-container-coder-base.git
-[submodule "coder"]
-	path = coder
+[submodule "images/coder"]
+	path = images/coder
 	url = https://github.com/idekube-project/idekube-container-coder.git
-[submodule "jupyter-base"]
-	path = jupyter-base
+[submodule "images/jupyter-base"]
+	path = images/jupyter-base
 	url = https://github.com/idekube-project/idekube-container-jupyter-base.git
-[submodule "jupyter"]
-	path = jupyter
+[submodule "images/jupyter"]
+	path = images/jupyter
 	url = https://github.com/idekube-project/idekube-container-jupyter.git
-[submodule "agent-base"]
-	path = agent-base
+[submodule "images/agent-base"]
+	path = images/agent-base
 	url = https://github.com/idekube-project/idekube-container-agent-base.git
-[submodule "agent"]
-	path = agent
+[submodule "images/agent"]
+	path = images/agent
 	url = https://github.com/idekube-project/idekube-container-agent.git

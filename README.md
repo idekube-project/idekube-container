@@ -24,19 +24,19 @@ This is the **meta-repository** that ties together all sub-projects. Each compon
 
 | Submodule | Repository | Images | Description |
 |-----------|------------|--------|-------------|
-| [`featured-base/`](featured-base/) | [idekube-container-featured-base](https://github.com/idekube-project/idekube-container-featured-base) | `featured/base` | Full desktop (XFCE + noVNC) + Coder + SSH + Miniconda + VirtualGL |
-| [`coder-base/`](coder-base/) | [idekube-container-coder-base](https://github.com/idekube-project/idekube-container-coder-base) | `coder/base` | Coder IDE + SSH, minimal install |
-| [`jupyter-base/`](jupyter-base/) | [idekube-container-jupyter-base](https://github.com/idekube-project/idekube-container-jupyter-base) | `jupyter/base` | JupyterLab + SSH + Miniconda |
-| [`agent-base/`](agent-base/) | [idekube-container-agent-base](https://github.com/idekube-project/idekube-container-agent-base) | `agent/base` | AI agent toolchain (Claude Code + opencode + ttyd + document processing) |
+| [`images/featured-base/`](images/featured-base/) | [idekube-container-featured-base](https://github.com/idekube-project/idekube-container-featured-base) | `featured/base` | Full desktop (XFCE + noVNC) + Coder + SSH + Miniconda + VirtualGL |
+| [`images/coder-base/`](images/coder-base/) | [idekube-container-coder-base](https://github.com/idekube-project/idekube-container-coder-base) | `coder/base` | Coder IDE + SSH, minimal install |
+| [`images/jupyter-base/`](images/jupyter-base/) | [idekube-container-jupyter-base](https://github.com/idekube-project/idekube-container-jupyter-base) | `jupyter/base` | JupyterLab + SSH + Miniconda |
+| [`images/agent-base/`](images/agent-base/) | [idekube-container-agent-base](https://github.com/idekube-project/idekube-container-agent-base) | `agent/base` | AI agent toolchain (Claude Code + opencode + ttyd + document processing) |
 
 ### Image Projects (Derived)
 
 | Submodule | Repository | Images | Base |
 |-----------|------------|--------|------|
-| [`featured/`](featured/) | [idekube-container-featured](https://github.com/idekube-project/idekube-container-featured) | `speit`, `speit-ai`, `dind`, `kathara`, `ros2` | `featured/base` |
-| [`coder/`](coder/) | [idekube-container-coder](https://github.com/idekube-project/idekube-container-coder) | `conda` | `coder/base` |
-| [`jupyter/`](jupyter/) | [idekube-container-jupyter](https://github.com/idekube-project/idekube-container-jupyter) | `speit-ai`, `speit-ascendai` | `jupyter/base` |
-| [`agent/`](agent/) | [idekube-container-agent](https://github.com/idekube-project/idekube-container-agent) | `openclaw`, `hermes` | `agent/base` |
+| [`images/featured/`](images/featured/) | [idekube-container-featured](https://github.com/idekube-project/idekube-container-featured) | `speit`, `speit-ai`, `dind`, `kathara`, `ros2` | `featured/base` |
+| [`images/coder/`](images/coder/) | [idekube-container-coder](https://github.com/idekube-project/idekube-container-coder) | `conda` | `coder/base` |
+| [`images/jupyter/`](images/jupyter/) | [idekube-container-jupyter](https://github.com/idekube-project/idekube-container-jupyter) | `speit-ai`, `speit-ascendai` | `jupyter/base` |
+| [`images/agent/`](images/agent/) | [idekube-container-agent](https://github.com/idekube-project/idekube-container-agent) | `openclaw`, `hermes` | `agent/base` |
 
 ## Architecture
 
@@ -146,7 +146,7 @@ volumes:
 ### Build from source
 
 ```bash
-cd featured-base
+cd images/featured-base
 make prepare && make build
 ```
 
