@@ -1,11 +1,11 @@
 [submodule "third_party/docker-builder"]
 	path = third_party/docker-builder
-	url = ../idekube-container-docker-builder.git
+	url = https://github.com/idekube-project/idekube-container-docker-builder.git
 
 [submodule "third_party/artifacts"]
 	path = third_party/artifacts
-	url = ../idekube-container-artifacts.git
+	url = https://github.com/idekube-project/idekube-container-artifacts.git
 
 [submodule "third_party/qemu-builder"]
 	path = third_party/qemu-builder
-	url = ../idekube-container-qemu-builder.git
+	url = https://github.com/idekube-project/idekube-container-qemu-builder.git
