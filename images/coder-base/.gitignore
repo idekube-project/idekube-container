@@ -1,5 +1,4 @@
 # Symlinks created by make prepare
-shared-install-scripts
 artifacts/docker/rootfs
 tools/idekube-healthcheck
 frontend/dist

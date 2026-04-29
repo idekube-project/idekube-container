@@ -28,23 +28,23 @@ RUN if [ ${USE_APT_MIRROR} != "false" ]; then \
     fi;
 
 # built-in packages
-RUN --mount=type=bind,source=shared-install-scripts/setup-packages-lite.sh,target=/tmp/setup-packages-lite.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-packages-lite.sh,target=/tmp/setup-packages-lite.sh \
     bash /tmp/setup-packages-lite.sh
 
 # tini to fix subreap
-RUN --mount=type=bind,source=shared-install-scripts/setup-tini-lite.sh,target=/tmp/setup-tini-lite.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-tini-lite.sh,target=/tmp/setup-tini-lite.sh \
     export TINI_VERSION=${TINI_VERSION}; bash /tmp/setup-tini-lite.sh
 
 # Setup the websocat and ssh
-RUN --mount=type=bind,source=shared-install-scripts/setup-websocat-ssh.sh,target=/tmp/setup-websocat-ssh.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-websocat-ssh.sh,target=/tmp/setup-websocat-ssh.sh \
     export WEBSOCAT_VERSION=${WEBSOCAT_VERSION}; bash /tmp/setup-websocat-ssh.sh
 
 # Setup the code-server
-RUN --mount=type=bind,source=shared-install-scripts/setup-code-server.sh,target=/tmp/setup-code-server.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-code-server.sh,target=/tmp/setup-code-server.sh \
     export CODER_VERSION=${CODER_VERSION}; bash /tmp/setup-code-server.sh
 
 # Create the IDEKube user with home and bash shell
-RUN --mount=type=bind,source=shared-install-scripts/setup-user.sh,target=/tmp/setup-user.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-user.sh,target=/tmp/setup-user.sh \
     bash /tmp/setup-user.sh
 ENV SHELL=/bin/bash \
     USERNAME=idekube \
