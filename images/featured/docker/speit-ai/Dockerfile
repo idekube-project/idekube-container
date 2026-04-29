@@ -21,7 +21,7 @@ RUN . /opt/miniconda3/etc/profile.d/conda.sh && conda activate && \
 
 SHELL ["conda", "run", "-n", "pytorch", "/bin/bash", "-c"]
 
-RUN --mount=type=bind,source=shared-install-scripts/setup-ml-env.sh,target=/tmp/setup-ml-env.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-ml-env.sh,target=/tmp/setup-ml-env.sh \
     bash /tmp/setup-ml-env.sh
 
 SHELL ["/bin/bash", "-c"]

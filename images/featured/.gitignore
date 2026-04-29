@@ -1,5 +1,4 @@
 # Symlinks created by make prepare
-shared-install-scripts
 scripts/shell
 manifests/qemu/Dockerfile
 manifests/qemu/Dockerfile.engine

@@ -14,7 +14,6 @@ $(BUILDER)/build.py:
 	git submodule update --init --recursive
 
 prepare: $(BUILDER)/build.py
-	@ln -sfn ../third_party/artifacts/install-scripts shared-install-scripts
 	@# QEMU builder: scripts, manifests, artifacts, tools
 	@mkdir -p scripts
 	@ln -sfn ../third_party/qemu-builder/scripts/shell scripts/shell
@@ -75,4 +74,3 @@ ci-matrix: prepare
 	@$(BUILD_PY) ci-matrix --lineup=$(LINEUP) --pretty
 
 clean:
-	rm -f shared-install-scripts
