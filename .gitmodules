@@ -1,0 +1,39 @@
+[submodule "healthcheck"]
+	path = healthcheck
+	url = https://github.com/idekube-project/idekube-container-healthcheck.git
+[submodule "frontend"]
+	path = frontend
+	url = https://github.com/idekube-project/idekube-container-frontend.git
+[submodule "artifacts"]
+	path = artifacts
+	url = https://github.com/idekube-project/idekube-container-artifacts.git
+[submodule "docker-builder"]
+	path = docker-builder
+	url = https://github.com/idekube-project/idekube-container-docker-builder.git
+[submodule "qemu-builder"]
+	path = qemu-builder
+	url = https://github.com/idekube-project/idekube-container-qemu-builder.git
+[submodule "featured-base"]
+	path = featured-base
+	url = https://github.com/idekube-project/idekube-container-featured-base.git
+[submodule "featured"]
+	path = featured
+	url = https://github.com/idekube-project/idekube-container-featured.git
+[submodule "coder-base"]
+	path = coder-base
+	url = https://github.com/idekube-project/idekube-container-coder-base.git
+[submodule "coder"]
+	path = coder
+	url = https://github.com/idekube-project/idekube-container-coder.git
+[submodule "jupyter-base"]
+	path = jupyter-base
+	url = https://github.com/idekube-project/idekube-container-jupyter-base.git
+[submodule "jupyter"]
+	path = jupyter
+	url = https://github.com/idekube-project/idekube-container-jupyter.git
+[submodule "agent-base"]
+	path = agent-base
+	url = https://github.com/idekube-project/idekube-container-agent-base.git
+[submodule "agent"]
+	path = agent
+	url = https://github.com/idekube-project/idekube-container-agent.git
