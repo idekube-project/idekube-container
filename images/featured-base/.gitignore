@@ -1,0 +1,9 @@
+# Symlinks created by make prepare
+shared-install-scripts
+artifacts/docker/rootfs
+tools/idekube-healthcheck
+frontend/dist
+
+# Build cache
+.cache/
+.DS_Store
