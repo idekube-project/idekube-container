@@ -12,13 +12,13 @@ RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
 # Configure Python environment
 SHELL ["conda", "run", "-n", "base", "/bin/bash", "-c"]
-RUN --mount=type=bind,source=shared-install-scripts/setup-speit-pip.sh,target=/tmp/setup-speit-pip.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-speit-pip.sh,target=/tmp/setup-speit-pip.sh \
     bash /tmp/setup-speit-pip.sh
 
 # Configure Python environment
 RUN conda create -n pytorch python=3.11 -y
 SHELL ["conda", "run", "-n", "pytorch", "/bin/bash", "-c"]
-RUN --mount=type=bind,source=shared-install-scripts/setup-ml-env.sh,target=/tmp/setup-ml-env.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-ml-env.sh,target=/tmp/setup-ml-env.sh \
     bash /tmp/setup-ml-env.sh && \
     pip install ipykernel && \
     python -m ipykernel install --name pytorch --display-name "Python (pytorch)" && \

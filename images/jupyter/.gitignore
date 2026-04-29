@@ -1,6 +1,3 @@
-# Symlinks created by make prepare
-shared-install-scripts
-
 # Build cache
 .cache/
 .DS_Store
