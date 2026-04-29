@@ -1,0 +1,4 @@
+{
+  "branch": "agent/openclaw",
+  "depends_on": "agent/base"
+}
