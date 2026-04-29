@@ -1,0 +1,16 @@
+{
+  "registry": "docker.io",
+  "author": "davidliyutong",
+  "name": "idekube-container",
+  "archs": ["amd64", "arm64"],
+  "dockerargs_file": ".dockerargs.base",
+  "lineups": {
+    "base": {
+      "dockerargs_file": ".dockerargs.base"
+    },
+    "ascend": {
+      "dockerargs_file": ".dockerargs.ascend",
+      "archs": ["arm64"]
+    }
+  }
+}
