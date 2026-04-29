@@ -32,15 +32,15 @@ RUN if [ ${USE_APT_MIRROR} != "false" ]; then \
     fi;
 
 # built-in packages (supervisor, nginx, sshd, python3, git, jq, tmux, ...)
-RUN --mount=type=bind,source=shared-install-scripts/setup-packages.sh,target=/tmp/setup-packages.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-packages.sh,target=/tmp/setup-packages.sh \
     bash /tmp/setup-packages.sh
 
 # tini to fix subreap
-RUN --mount=type=bind,source=shared-install-scripts/setup-tini.sh,target=/tmp/setup-tini.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-tini.sh,target=/tmp/setup-tini.sh \
     export TINI_VERSION=${TINI_VERSION}; bash /tmp/setup-tini.sh
 
 # Setup the websocat and ssh
-RUN --mount=type=bind,source=shared-install-scripts/setup-websocat-ssh.sh,target=/tmp/setup-websocat-ssh.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-websocat-ssh.sh,target=/tmp/setup-websocat-ssh.sh \
     export WEBSOCAT_VERSION=${WEBSOCAT_VERSION}; bash /tmp/setup-websocat-ssh.sh
 
 # Setup ttyd (web terminal)
@@ -48,7 +48,7 @@ RUN --mount=type=bind,source=docker/base/install-scripts/setup-ttyd.sh,target=/t
     export TTYD_VERSION=${TTYD_VERSION}; bash /tmp/setup-ttyd.sh
 
 # Create the IDEKube user (must come before openclaw, which su's into it)
-RUN --mount=type=bind,source=shared-install-scripts/setup-user.sh,target=/tmp/setup-user.sh \
+RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-user.sh,target=/tmp/setup-user.sh \
     bash /tmp/setup-user.sh
 ENV SHELL=/bin/bash \
     USERNAME=idekube \
