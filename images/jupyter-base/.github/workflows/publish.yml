@@ -1,0 +1,22 @@
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      lineup:
+        description: 'Lineup to build (empty = all)'
+        required: false
+        default: ''
+
+jobs:
+  publish:
+    uses: idekube-project/idekube-container-docker-builder/.github/workflows/publish-reusable.yml@main
+    with:
+      type: base
+      lineup: ${{ inputs.lineup }}
+      node-version: '22'
+    permissions:
+      contents: read
+      packages: write
