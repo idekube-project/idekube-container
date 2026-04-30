@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # featured/kathara — Kathara network emulation on top of Docker-in-Docker
 # Dependency chain: featured/base -> featured/dind -> featured/kathara
-ARG BASE_IMAGE
+ARG BASE_IMAGE=base-image
 FROM ${BASE_IMAGE} AS system
 
 ARG NETCAP_VERSION=v0.6.11

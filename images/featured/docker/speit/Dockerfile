@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-ARG BASE_IMAGE
+ARG BASE_IMAGE=base-image
 FROM ${BASE_IMAGE} AS system
 
 ARG PIP_MIRROR_URL="https://mirror.sjtu.edu.cn/pypi/web/simple" \
@@ -22,7 +22,7 @@ RUN if [ ${USE_PIP_MIRROR} != "false" ]; then \
         pip config set global.index-url ${PIP_MIRROR_URL}; \
     fi;
 # Configure Python environment
-RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-speit-pip.sh,target=/tmp/setup-speit-pip.sh \
+RUN --mount=type=bind,from=artifacts,source=install-scripts/setup-speit-pip.sh,target=/tmp/setup-speit-pip.sh \
     . /opt/miniconda3/etc/profile.d/conda.sh && conda activate && \
     bash /tmp/setup-speit-pip.sh
 

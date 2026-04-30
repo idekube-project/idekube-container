@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-ARG BASE_IMAGE
+ARG BASE_IMAGE=base-image
 FROM ${BASE_IMAGE} AS system
 
 # Install packages
@@ -21,7 +21,7 @@ RUN . /opt/miniconda3/etc/profile.d/conda.sh && conda activate && \
 
 SHELL ["conda", "run", "-n", "pytorch", "/bin/bash", "-c"]
 
-RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-ml-env.sh,target=/tmp/setup-ml-env.sh \
+RUN --mount=type=bind,from=artifacts,source=install-scripts/setup-ml-env.sh,target=/tmp/setup-ml-env.sh \
     bash /tmp/setup-ml-env.sh
 
 SHELL ["/bin/bash", "-c"]

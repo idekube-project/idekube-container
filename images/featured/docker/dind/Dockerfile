@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-ARG BASE_IMAGE
+ARG BASE_IMAGE=base-image
 FROM ${BASE_IMAGE} AS system
 
 ENV PYTHONIOENCODING=utf-8

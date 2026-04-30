@@ -1,14 +1,3 @@
-# Symlinks created by make prepare
-scripts/shell
-manifests/qemu/Dockerfile
-manifests/qemu/Dockerfile.engine
-manifests/qemu/featured/kathara
-artifacts/qemu/configs
-artifacts/qemu/rootfs
-artifacts/qemu/startup-scripts
-artifacts/qemu/featured
-tools/utility
-
 # Build cache
 .cache/
 .DS_Store
