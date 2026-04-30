@@ -43,8 +43,11 @@ prepare:
 
 # Single-arch local build, loaded into the host docker engine.
 # Pass TARGET=<bake-target-name>, e.g. featured-base-base, agent-openclaw.
+# Forces single-platform (host arch) because docker's image store can't load manifest lists.
+HOST_ARCH := $(shell uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+
 bake:
-	docker buildx bake -f docker-bake.hcl --load $(TARGET)
+	docker buildx bake -f docker-bake.hcl --load --set "*.platform=linux/$(HOST_ARCH)" $(TARGET)
 
 # Multi-arch staging build (no push). Useful before pushing to verify both archs.
 bake-staging:
