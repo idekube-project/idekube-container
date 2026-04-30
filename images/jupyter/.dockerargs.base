@@ -1,3 +1,0 @@
-TAG_POSTFIX=
-PIP_MIRROR_URL=https://mirror.sjtu.edu.cn/pypi/web/simple
-USE_PIP_MIRROR=false
