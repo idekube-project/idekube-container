@@ -1,4 +1,4 @@
-module github.com/davidliyutong/idekube-container/tools/idekube-healthcheck
+module github.com/idekube-project/idekube-container-healthcheck
 
 go 1.25.0
 
