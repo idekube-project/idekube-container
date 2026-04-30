@@ -1,14 +1,22 @@
 # syntax=docker/dockerfile:1
+# Self-contained Dockerfile: only references paths inside this image repo,
+# plus BuildKit named contexts (artifacts, healthcheck-src, frontend-src)
+# supplied by docker-bake.hcl.
+
 ARG BASE_IMAGE=ubuntu:24.04
 
 FROM golang:1.25-alpine AS healthcheck-builder
 WORKDIR /build
-COPY tools/idekube-healthcheck/ .
+COPY --from=healthcheck-src . .
 RUN go mod download && go build -o /idekube-healthcheck .
+
+FROM node:22-alpine AS frontend-builder
+WORKDIR /src
+COPY --from=frontend-src . .
+RUN npm ci && npm run build
 
 FROM ${BASE_IMAGE} AS system
 
-# These arguments are passed in via the docker build command
 ARG TZ=Asia/Shanghai \
     APT_MIRROR="mirror.sjtu.edu.cn" \
     USE_APT_MIRROR="true" \
@@ -19,7 +27,6 @@ ARG TZ=Asia/Shanghai \
     OPENCODE_VERSION=latest \
     CLAUDE_CODE_VERSION=latest
 
-# Avoid prompts for time zone
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=${TZ} \
     PYTHONIOENCODING=utf-8
@@ -32,15 +39,15 @@ RUN if [ ${USE_APT_MIRROR} != "false" ]; then \
     fi;
 
 # built-in packages (supervisor, nginx, sshd, python3, git, jq, tmux, ...)
-RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-packages.sh,target=/tmp/setup-packages.sh \
+RUN --mount=type=bind,from=artifacts,source=install-scripts/setup-packages.sh,target=/tmp/setup-packages.sh \
     bash /tmp/setup-packages.sh
 
 # tini to fix subreap
-RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-tini.sh,target=/tmp/setup-tini.sh \
+RUN --mount=type=bind,from=artifacts,source=install-scripts/setup-tini.sh,target=/tmp/setup-tini.sh \
     export TINI_VERSION=${TINI_VERSION}; bash /tmp/setup-tini.sh
 
 # Setup the websocat and ssh
-RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-websocat-ssh.sh,target=/tmp/setup-websocat-ssh.sh \
+RUN --mount=type=bind,from=artifacts,source=install-scripts/setup-websocat-ssh.sh,target=/tmp/setup-websocat-ssh.sh \
     export WEBSOCAT_VERSION=${WEBSOCAT_VERSION}; bash /tmp/setup-websocat-ssh.sh
 
 # Setup ttyd (web terminal)
@@ -48,7 +55,7 @@ RUN --mount=type=bind,source=docker/base/install-scripts/setup-ttyd.sh,target=/t
     export TTYD_VERSION=${TTYD_VERSION}; bash /tmp/setup-ttyd.sh
 
 # Create the IDEKube user (must come before openclaw, which su's into it)
-RUN --mount=type=bind,source=third_party/artifacts/install-scripts/setup-user.sh,target=/tmp/setup-user.sh \
+RUN --mount=type=bind,from=artifacts,source=install-scripts/setup-user.sh,target=/tmp/setup-user.sh \
     bash /tmp/setup-user.sh
 ENV SHELL=/bin/bash \
     USERNAME=idekube \
@@ -81,9 +88,11 @@ RUN --mount=type=bind,source=docker/base/install-scripts/setup-agent-shell-env.s
     bash /tmp/setup-agent-shell-env.sh
 
 # Setup the root filesystem (common rootfs + agent overrides)
-COPY artifacts/docker/rootfs /
+COPY --from=artifacts rootfs/ /
 COPY artifacts/docker/agent/rootfs /
-COPY frontend/dist/ /usr/share/nginx/html/
+
+# Frontend
+COPY --from=frontend-builder /src/dist/ /usr/share/nginx/html/
 
 # Health check server
 COPY --from=healthcheck-builder /idekube-healthcheck /usr/local/bin/idekube-healthcheck
