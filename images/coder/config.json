@@ -1,6 +1,6 @@
 {
-  "registry": "docker.io",
-  "author": "davidliyutong",
+  "registry": "ghcr.io",
+  "author": "idekube-project",
   "name": "idekube-container",
   "archs": ["amd64", "arm64"],
   "dockerargs_file": ".dockerargs.base",

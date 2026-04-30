@@ -1,0 +1,27 @@
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Image branch to build (empty = all)'
+        required: false
+        default: ''
+      lineup:
+        description: 'Lineup to build (empty = all)'
+        required: false
+        default: ''
+
+jobs:
+  publish:
+    uses: idekube-project/idekube-container-docker-builder/.github/workflows/publish-reusable.yml@main
+    with:
+      type: derived
+      branch: ${{ inputs.branch }}
+      lineup: ${{ inputs.lineup }}
+      tag-stable: false
+    permissions:
+      contents: read
+      packages: write
