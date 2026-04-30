@@ -124,7 +124,7 @@ git clone --recurse-submodules https://github.com/idekube-project/idekube-contai
 # docker-compose.yml
 services:
   idekube_container:
-    image: davidliyutong/idekube-container:featured-base-stable
+    image: ghcr.io/idekube-project/idekube-container:featured-base-stable
     ports:
       - "3000:80"
     volumes:
@@ -152,7 +152,7 @@ make prepare && make build
 
 ## Available Docker Image Tags
 
-Pre-built images are published on [Docker Hub](https://hub.docker.com/r/davidliyutong/idekube-container).
+Pre-built images are published on [GitHub Container Registry](https://github.com/orgs/idekube-project/packages?repo_name=idekube-container).
 
 ### Standard Tags (base image: `ubuntu:24.04`)
 
@@ -185,7 +185,7 @@ Tags are suffixed with `-ascend`. ARM64 only.
 
 ### QEMU Container Tags
 
-Published as `davidliyutong/idekube-container-qemu:<tag>`. Full workload isolation via nested VM.
+Published as `ghcr.io/idekube-project/idekube-container-qemu:<tag>`. Full workload isolation via nested VM.
 
 | Tag | Description |
 |-----|-------------|
