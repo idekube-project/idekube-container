@@ -1,0 +1,44 @@
+#cloud-config
+# BUILD-TIME cloud-init config.
+# NOTE: the "#cloud-config" line MUST be the first line — cloud-init
+# only recognizes user-data as cloud-config when that magic header is
+# at offset 0.  Earlier revisions had a preamble of comments above it,
+# which caused cloud-init to silently skip this file and boot with the
+# default "ubuntu" user (no password), making the Ansible SSH step
+# hang forever.
+#
+# Used during Ansible provisioning (build_qemu_root.sh) as-is, and at
+# runtime as the base config that the QEMU container's startup.sh
+# patches in place: ssh_pwauth is flipped to false, and a write_files
+# entry for /etc/idekube/runtime-env plus a runcmd for vm-init.sh are
+# appended to inject SSH keys, UID remapping, and other IDEKUBE_*
+# settings.  The access_token.conf template is baked into the VM
+# image; authn.sh performs the placeholder replacement at VM boot
+# based on /etc/idekube/runtime-env.
+#
+# ssh_pwauth is true here because Ansible connects via sshpass during
+# build.  The runtime config sets ssh_pwauth: false and vm-init.sh
+# enforces PasswordAuthentication no in sshd_config.
+users:
+  - name: idekube
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: false
+    groups: [sudo, video]
+
+chpasswd:
+  list: |
+    idekube:idekube
+  expire: False
+
+# Allow password auth during build (Ansible provisioning)
+ssh_pwauth: true
+
+timezone: Asia/Shanghai
+
+network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: true
+      dhcp6: false

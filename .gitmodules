@@ -7,12 +7,6 @@
 [submodule "artifacts"]
 	path = artifacts
 	url = https://github.com/idekube-project/idekube-container-artifacts.git
-[submodule "docker-builder"]
-	path = docker-builder
-	url = https://github.com/idekube-project/idekube-container-docker-builder.git
-[submodule "qemu-builder"]
-	path = qemu-builder
-	url = https://github.com/idekube-project/idekube-container-qemu-builder.git
 [submodule "images/featured-base"]
 	path = images/featured-base
 	url = https://github.com/idekube-project/idekube-container-featured-base.git
