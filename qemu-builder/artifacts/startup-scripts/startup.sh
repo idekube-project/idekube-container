@@ -30,7 +30,7 @@ echo "Copying root disk image..."
 mkdir -p ./images
 if ! cp -r "${SOURCE_DIR}/images/root.img" ./images/; then
     echo "Error: Failed to copy root disk image from ${SOURCE_DIR}/images/root.img" >&2
-    echo "       The image may not have been built. Run 'make build_qemu_root' first." >&2
+    echo "       The image may not have been built. Run 'make qemu-root BRANCH=<flavor>/<variant>' first." >&2
     exit 1
 fi
 

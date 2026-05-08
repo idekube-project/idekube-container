@@ -1,10 +1,14 @@
 """Image tag resolution and availability detection.
 
 The bake-driven build system tags images per-flavor:
-  ghcr.io/idekube-project/idekube-container-<flavor>:<variant>-<version>[-ascend][-staging]
+  base repos: ghcr.io/idekube-project/idekube-container-<flavor>-base:<version>[-ascend][-staging]
+  app repos:  ghcr.io/idekube-project/idekube-container-<flavor>:<variant>-<version>[-ascend][-staging]
 
-This helper produces the same refs that docker-bake.hcl produces, so tests can
-locate the locally-built or pushed images.
+QEMU images use the same owning repo and append "-qemu" to the normal release
+tag, for example idekube-container-featured-base:v1.0.0-qemu.
+
+This helper produces the same refs that docker-bake.hcl and the QEMU build
+scripts produce, so tests can locate the locally-built or pushed images.
 """
 
 from __future__ import annotations
@@ -16,9 +20,9 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# Lineup -> branches. Mirrors docker-bake.hcl groups "base" / "ascend".
+# Lineup -> branches. Mirrors docker-bake.hcl groups "universal" / "ascend".
 LINEUP_BRANCHES: dict[str, list[str]] = {
-    "base": [
+    "universal": [
         "featured/base",
         "featured/speit",
         "featured/speit-ai",
@@ -126,26 +130,46 @@ def branch_to_slug(branch: str) -> str:
     return branch.replace("/", "-")
 
 
-def resolve_image_ref(branch: str, lineup: str = "base") -> str:
-    """Compute the full image ref produced by docker buildx bake.
+def resolve_image_tag(branch: str, lineup: str = "universal", image_kind: str = "docker") -> str:
+    """Compute the image tag for a branch.
 
-    Format: {registry}/{author}/{repo}:{variant}-{version}{lineup_postfix}{staging_postfix}
+    Docker base repos use bare version tags because "base" is the image kind,
+    not a lineup or application variant. Non-base application repos keep the
+    variant prefix.
 
     - lineup_postfix is "-ascend" for the ascend lineup, "" otherwise.
+    - image_kind "qemu" appends "-qemu" before the staging postfix.
     - staging_postfix is read from STAGING_POSTFIX env var (matches bake).
     """
+    if branch not in BRANCH_REPO:
+        raise ValueError(f"Unknown branch: {branch}")
+    if lineup not in LINEUP_BRANCHES:
+        raise ValueError(f"Unknown lineup: {lineup}")
+    if image_kind not in {"docker", "qemu"}:
+        raise ValueError(f"Unknown image kind: {image_kind}")
+
+    version = detect_git_tag()
+    lineup_postfix = "-ascend" if lineup == "ascend" else ""
+    staging_postfix = os.environ.get("STAGING_POSTFIX", "")
+
+    variant = branch_to_variant(branch)
+    tag_prefix = "" if variant == "base" else f"{variant}-"
+    tag = f"{tag_prefix}{version}{lineup_postfix}"
+    if image_kind == "qemu":
+        tag += "-qemu"
+    tag += staging_postfix
+    return tag
+
+
+def resolve_image_ref(branch: str, lineup: str = "universal", image_kind: str = "docker") -> str:
+    """Compute the full image ref produced by docker buildx bake or QEMU scripts."""
     if branch not in BRANCH_REPO:
         raise ValueError(f"Unknown branch: {branch}")
 
     registry = os.environ.get("REGISTRY", "ghcr.io")
     author = os.environ.get("AUTHOR", "idekube-project")
     repo = BRANCH_REPO[branch]
-    version = detect_git_tag()
-    lineup_postfix = "-ascend" if lineup == "ascend" else ""
-    staging_postfix = os.environ.get("STAGING_POSTFIX", "")
-
-    variant = branch_to_variant(branch)
-    tag = f"{variant}-{version}{lineup_postfix}{staging_postfix}"
+    tag = resolve_image_tag(branch, lineup, image_kind)
     return f"{registry}/{author}/{repo}:{tag}"
 
 

@@ -7,7 +7,8 @@ ARG QEMU_VERSION=10.2.0
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
-    apt-get install -y \
+    apt-get install -y --no-install-recommends \
+            ca-certificates \
             build-essential \
             ninja-build \
             meson \
@@ -31,14 +32,23 @@ RUN apt-get update && \
             rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp/qemu
-RUN curl -L -o "qemu-${QEMU_VERSION}.tar.xz" "https://download.qemu.org/qemu-${QEMU_VERSION}.tar.xz" && \
-    tar -xf "qemu-${QEMU_VERSION}.tar.xz" --strip-components=1 && \
-    rm "qemu-${QEMU_VERSION}.tar.xz"
+COPY .cache/qemu_files/qemu-${QEMU_VERSION}.tar.xz /tmp/qemu/qemu.tar.xz
+RUN tar -xf qemu.tar.xz --strip-components=1 && \
+    rm qemu.tar.xz
 
-RUN ./configure --prefix=/usr/local --enable-vhost-user --enable-vhost-net --enable-kvm --enable-libusb --enable-opengl --enable-slirp --enable-vnc && \
-    cd build && \
-    make -j$(nproc) && \
-    make DESTDIR=/tmp/qemu-install install
+RUN ./configure \
+        --prefix=/usr/local \
+        --target-list=x86_64-softmmu,aarch64-softmmu \
+        --disable-docs \
+        --disable-guest-agent \
+        --enable-vhost-user \
+        --enable-vhost-net \
+        --enable-kvm \
+        --enable-libusb \
+        --enable-opengl \
+        --enable-slirp \
+        --enable-vnc && \
+    DESTDIR=/tmp/qemu-install ninja -C build -j"$(nproc)" install
 
 FROM ubuntu:24.04 AS runtime
 
@@ -46,7 +56,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install dependencies
 RUN apt-get update && \
-    apt-get install -y \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
     bc \
     jq \
     cloud-image-utils \
@@ -64,9 +75,9 @@ COPY --from=builder /tmp/qemu-install/usr/local /usr/local/
 
 WORKDIR /var/lib/idekube/
 COPY .cache/qemu_files/*.fd ./uefi/
-COPY artifacts/qemu/configs/* ./configs/
+COPY artifacts/configs/* ./configs/
 
 WORKDIR /var/lib/data/
-COPY artifacts/qemu/startup-scripts/* /
+COPY artifacts/startup-scripts/* /
 
 ENTRYPOINT [ "/bin/bash" ]

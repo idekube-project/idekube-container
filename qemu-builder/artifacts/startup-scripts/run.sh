@@ -28,7 +28,9 @@ if [[ "$(uname)" == "Darwin" ]]; then
     ACCELERATOR=" -accel hvf "
     CPU_TYPE="host"
 elif [[ "$(uname)" == "Linux" ]]; then
-    if [[ "${DISABLE_KVM}" != "1" ]] && [[ -e /dev/kvm ]] && (lsmod | grep -q kvm || [[ -d /sys/module/kvm ]]); then
+    if [[ "${DISABLE_KVM}" != "1" ]] && [[ -e /dev/kvm ]] && {
+        [[ -d /sys/module/kvm ]] || { command -v lsmod >/dev/null 2>&1 && lsmod | grep -q kvm; }
+    }; then
         ACCELERATOR=" -accel kvm "
         CPU_TYPE="host"
     else

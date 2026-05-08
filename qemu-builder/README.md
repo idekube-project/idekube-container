@@ -51,7 +51,7 @@ Stage 3: Runtime Container (Dockerfile)
   idekube-qemu-engine:latest
     -> COPY provisioned root.img
     -> ENTRYPOINT /startup.sh
-    -> output: registry/author/idekube-container-qemu:<tag>-<arch>
+    -> output: registry/author/idekube-container-<flavor>[-base]:<tag>-qemu-<arch>
 ```
 
 ### Runtime Initialization Flow
@@ -228,7 +228,7 @@ docker run -d \
   -p 8080:80 \
   -e IDEKUBE_VM_MEMORY=2G \
   -e IDEKUBE_AUTHORIZED_KEYS="$(cat ~/.ssh/id_rsa.pub | base64)" \
-  registry/author/idekube-container-qemu:tag
+  registry/author/idekube-container-featured-base:v1.0.0-qemu
 ```
 
 ### Featured Flavor Nginx Services
@@ -330,7 +330,7 @@ docker run -d \
   -e IDEKUBE_VM_DISK_SIZE=20G \
   -e IDEKUBE_AUTHORIZED_KEYS="$(cat ~/.ssh/id_rsa.pub | base64)" \
   -e IDEKUBE_ACCESS_TOKEN=my-secret-token \
-  registry/author/idekube-container-qemu:tag
+  registry/author/idekube-container-featured-base:v1.0.0-qemu
 ```
 
 ### With KVM Acceleration
@@ -341,7 +341,7 @@ docker run -d \
   -p 10022:22 \
   -p 8080:80 \
   -e IDEKUBE_VM_MEMORY=4G \
-  registry/author/idekube-container-qemu:tag
+  registry/author/idekube-container-featured-base:v1.0.0-qemu
 ```
 
 ### SSH Access

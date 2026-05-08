@@ -8,7 +8,8 @@
 # Temporary dev tool — not wired into build.py or CI.
 set -euo pipefail
 
-source scripts/shell/qemu_common.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/qemu_common.sh"
 
 CACHE_DIR=".cache/${BRANCH}"
 IMAGES_DIR="${CACHE_DIR}/images"
@@ -26,8 +27,8 @@ if [[ ! -f "${ROOT_IMG}" ]]; then
     if ! docker image inspect "${IMAGE_REF}" >/dev/null 2>&1; then
         echo "✗ Container image ${IMAGE_REF} not found locally, and no qcow2 at ${ROOT_IMG}." >&2
         echo "  Run one of:" >&2
-        echo "    make build_qemu_root BRANCH=${BRANCH}   # produces the qcow2" >&2
-        echo "    make build_qemu      BRANCH=${BRANCH}   # produces the container image" >&2
+        echo "    make qemu-root BRANCH=${BRANCH}   # produces the qcow2" >&2
+        echo "    make qemu-build BRANCH=${BRANCH}  # produces the container image" >&2
         exit 1
     fi
 

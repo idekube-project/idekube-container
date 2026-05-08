@@ -1,13 +1,14 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-source scripts/shell/qemu_common.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/qemu_common.sh"
 
-# Ensure BRANCHES, REGISTRY, AUTHOR, NAME, GIT_TAG, and ARCH are set
+# Ensure BRANCH, REGISTRY, AUTHOR, NAME, TAG, IMAGE_REF, and ARCH are set
 if [ -z "$ARCH" ]; then
-    echo "docker push $REGISTRY/$AUTHOR/$NAME:$DOCKER_BRANCH-$GIT_TAG$TAG_POSTFIX"
-    docker push $REGISTRY/$AUTHOR/$NAME:$DOCKER_BRANCH-$GIT_TAG$TAG_POSTFIX
+    echo "docker push $IMAGE_REF"
+    docker push "$IMAGE_REF"
 else
-    echo "docker push $REGISTRY/$AUTHOR/$NAME:$DOCKER_BRANCH-$GIT_TAG$TAG_POSTFIX-$ARCH"
-    docker push $REGISTRY/$AUTHOR/$NAME:$DOCKER_BRANCH-$GIT_TAG$TAG_POSTFIX-$ARCH
+    echo "docker push $IMAGE_REF-$ARCH"
+    docker push "$IMAGE_REF-$ARCH"
 fi

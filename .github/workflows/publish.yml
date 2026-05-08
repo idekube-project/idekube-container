@@ -13,10 +13,10 @@ on:
         options: [production, staging]
         default: staging
       lineup:
-        description: "base, ascend, or both"
+        description: "universal, ascend, or both"
         required: false
         type: choice
-        options: [base, ascend, both]
+        options: [universal, ascend, both]
         default: both
 
 jobs:
@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lineup: [base, ascend]
+        lineup: [universal, ascend]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -103,13 +103,14 @@ jobs:
         if: env.SKIP != '1' && steps.vars.outputs.mode == 'production'
         env:
           VERSION: ${{ steps.vars.outputs.version }}
+          LINEUP: ${{ matrix.lineup }}
         run: |
-          # Retag every base-* repo's <variant>-<version> as <variant>-stable.
+          # Retag every base repo's release tag as stable for this lineup only.
           # Derived repos do not get stable aliases (they FROM the base stable).
           base_branches="featured/base coder/base jupyter/base agent/base"
           for branch in $base_branches; do
             if [[ "${{ matrix.lineup }}" == "ascend" ]] && [[ "$branch" != "featured/base" ]] && [[ "$branch" != "jupyter/base" ]]; then
               continue
             fi
-            ./scripts/tag-stable.sh "$branch" "$VERSION"
+            ./scripts/tag-stable.sh "$branch" "$VERSION" "$LINEUP"
           done

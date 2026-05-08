@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
 QEMU_VERSION="10.2.0"
 QEMU_URL="https://download.qemu.org/qemu-${QEMU_VERSION}.tar.xz"
@@ -22,16 +23,12 @@ else
     tar -xf "${FILES_DIR}/qemu-${QEMU_VERSION}.tar.xz" -C "${FILES_DIR}"
 fi
 
-echo "Copying edk2-aarch64-code.fd.bz2 from pc-bios..."
-cp "${FILES_DIR}/qemu-${QEMU_VERSION}/pc-bios/edk2-aarch64-code.fd.bz2" .
-cp "${FILES_DIR}/qemu-${QEMU_VERSION}/pc-bios/edk2-arm-vars.fd.bz2" .
+echo "Extracting aarch64 UEFI firmware..."
+bunzip2 -c "${FILES_DIR}/qemu-${QEMU_VERSION}/pc-bios/edk2-aarch64-code.fd.bz2" > "${FILES_DIR}/edk2-aarch64-code.fd"
+bunzip2 -c "${FILES_DIR}/qemu-${QEMU_VERSION}/pc-bios/edk2-arm-vars.fd.bz2" > "${FILES_DIR}/edk2-arm-vars.fd"
 
-echo "Decompressing edk2-aarch64-code.fd.bz2..."
-bunzip2 edk2-aarch64-code.fd.bz2
-bunzip2 edk2-arm-vars.fd.bz2
+echo "Extracting x86_64 UEFI firmware..."
+bunzip2 -c "${FILES_DIR}/qemu-${QEMU_VERSION}/pc-bios/edk2-x86_64-code.fd.bz2" > "${FILES_DIR}/OVMF_CODE.fd"
+bunzip2 -c "${FILES_DIR}/qemu-${QEMU_VERSION}/pc-bios/edk2-i386-vars.fd.bz2" > "${FILES_DIR}/OVMF_VARS.fd"
 
-echo "Moving edk2-aarch64-code.fd to assets..."
-mv edk2-aarch64-code.fd "${FILES_DIR}/"
-mv edk2-arm-vars.fd "${FILES_DIR}/"
-
-echo "Done! edk2-aarch64-code.fd and edk2-arm-vars.fd are in ${FILES_DIR}/"
+echo "Done! UEFI firmware files are in ${FILES_DIR}/"

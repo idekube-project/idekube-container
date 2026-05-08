@@ -1,10 +1,33 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-source scripts/shell/qemu_common.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/qemu_common.sh"
 
-set -eo pipefail
+BRANCH_ENV="manifests/qemu/${BRANCH}/.env"
+if [[ -f "${BRANCH_ENV}" ]]; then
+    source "${BRANCH_ENV}"
+fi
 
-source "manifests/qemu/${BRANCH}/.env" || true
+require_file() {
+    local path="$1"
+    local hint="$2"
+    if [[ ! -f "${path}" ]]; then
+        echo "Error: required file not found: ${path}" >&2
+        echo "       ${hint}" >&2
+        exit 1
+    fi
+}
+
+require_dir() {
+    local path="$1"
+    local hint="$2"
+    if [[ ! -d "${path}" ]]; then
+        echo "Error: required directory not found: ${path}" >&2
+        echo "       ${hint}" >&2
+        exit 1
+    fi
+}
 
 # --- Architecture mapping ---
 # ARCH is already arm64/amd64 from qemu_common.sh; derive QEMU binary arch
@@ -33,10 +56,17 @@ fi
 IDEKUBE_VM_MEMORY="${IDEKUBE_VM_MEMORY:-4G}"
 IDEKUBE_VM_CPU="${IDEKUBE_VM_CPU:-2}"
 IDEKUBE_VM_DISK_SIZE="${IDEKUBE_VM_DISK_SIZE:-10G}"
+QEMU_LAUNCH_MODE="${QEMU_LAUNCH_MODE:-docker}"
 
 # --- Prepare cache directory ---
 CACHE_DIR=".cache/${BRANCH}"
 echo "Using cache directory: ${CACHE_DIR}"
+
+PLAYBOOK="manifests/qemu/${BRANCH}/install.yml"
+REQUIRE_QEMU_PLAYBOOK="${REQUIRE_QEMU_PLAYBOOK:-true}"
+if [[ "${REQUIRE_QEMU_PLAYBOOK}" == "true" ]]; then
+    require_file "${PLAYBOOK}" "Add the branch playbook or set REQUIRE_QEMU_PLAYBOOK=false for a rootfs-only experiment."
+fi
 
 mkdir -p "${CACHE_DIR}/images"
 mkdir -p "${CACHE_DIR}/configs"
@@ -44,21 +74,30 @@ mkdir -p "${CACHE_DIR}/uefi"
 
 # --- Copy base image to cache ---
 TARGET_IMAGE="${CACHE_DIR}/images/root.img"
-if [[ -n "$IDEKUBE_FROM" ]]; then
+if [[ -n "${IDEKUBE_FROM:-}" ]]; then
     SOURCE_IMAGE=".cache/${IDEKUBE_FROM}/images/root.img"
     echo "IDEKUBE_FROM is set: copying ${SOURCE_IMAGE} to ${TARGET_IMAGE}..."
 else
     SOURCE_IMAGE=".cache/qemu_images/${DISTRO}-${IMG_ARCH}.img"
     echo "Copying ${SOURCE_IMAGE} to ${TARGET_IMAGE}..."
 fi
+require_file "$SOURCE_IMAGE" "Run 'bash scripts/shell/prepare_qemu_images.sh' first."
 cp "$SOURCE_IMAGE" "$TARGET_IMAGE"
 
 # Copy configs and UEFI files
 echo "Copying configuration and UEFI files..."
-cp -r "artifacts/qemu/configs/"* "${CACHE_DIR}/configs/"
+require_dir "artifacts/configs" "QEMU config templates should live under qemu-builder/artifacts/configs."
+require_dir "artifacts/startup-scripts" "QEMU startup scripts should live under qemu-builder/artifacts/startup-scripts."
+require_file ".cache/qemu_files/edk2-aarch64-code.fd" "Run 'bash scripts/shell/prepare_qemu_files.sh' first."
+require_file ".cache/qemu_files/edk2-arm-vars.fd" "Run 'bash scripts/shell/prepare_qemu_files.sh' first."
+cp -r "artifacts/configs/"* "${CACHE_DIR}/configs/"
 cp -r ".cache/qemu_files/"*.fd "${CACHE_DIR}/uefi/"
 
 # Run cloud-init
+if ! docker image inspect cloud-localds:latest >/dev/null 2>&1; then
+    echo "Building cloud-localds:latest utility image..."
+    docker build -t cloud-localds:latest tools/utility/cloud-localds
+fi
 docker run --rm -v "${CACHE_DIR}/configs/:/workspace" cloud-localds:latest cloud-localds \
     /workspace/cloud-init.iso /workspace/user-data.yaml /workspace/meta-data.yaml
 
@@ -109,10 +148,9 @@ cleanup() {
             fi
         fi
     elif [[ "${VM_MODE}" == "docker" ]]; then
-        if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-            echo "Stopping container ${CONTAINER_NAME}..."
-            docker stop -t 3 "${CONTAINER_NAME}" 2>/dev/null || true
-            docker rm "${CONTAINER_NAME}" 2>/dev/null || true
+        if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+            echo "Removing container ${CONTAINER_NAME}..."
+            docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
         fi
     fi
 
@@ -122,11 +160,18 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 1' SIGINT SIGTERM
 
-# --- Launch VM: try native QEMU first ---
-echo "Attempting to run VM natively..."
-echo "Working directory: ${CACHE_ABS_PATH}"
+# --- Launch VM: default to Docker for a hermetic toolchain ---
+if [[ "${QEMU_LAUNCH_MODE}" == "native" || "${QEMU_LAUNCH_MODE}" == "auto" ]]; then
+    echo "Attempting to run VM natively..."
+    echo "Working directory: ${CACHE_ABS_PATH}"
+elif [[ "${QEMU_LAUNCH_MODE}" == "docker" ]]; then
+    echo "Using Docker QEMU engine. Set QEMU_LAUNCH_MODE=auto to try host-native QEMU first."
+else
+    echo "Error: unsupported QEMU_LAUNCH_MODE=${QEMU_LAUNCH_MODE}; expected docker, auto, or native." >&2
+    exit 1
+fi
 
-if [[ -f "artifacts/qemu/startup-scripts/run.sh" ]]; then
+if [[ "${QEMU_LAUNCH_MODE}" == "native" || "${QEMU_LAUNCH_MODE}" == "auto" ]] && [[ -f "artifacts/startup-scripts/run.sh" ]]; then
     export IDEKUBE_VM_MEMORY
     export IDEKUBE_VM_CPU
     export IDEKUBE_VM_DISK_SIZE
@@ -136,7 +181,7 @@ if [[ -f "artifacts/qemu/startup-scripts/run.sh" ]]; then
 
     cd "${CACHE_ABS_PATH}" || { echo "Failed to cd to ${CACHE_ABS_PATH}"; exit 1; }
 
-    if bash ../../../artifacts/qemu/startup-scripts/run.sh > "/tmp/qemu-${BRANCH//\//-}.log" 2>&1 &
+    if bash ../../../artifacts/startup-scripts/run.sh > "/tmp/qemu-${BRANCH//\//-}.log" 2>&1 &
     then
         VM_PID=$!
         VM_MODE="native"
@@ -227,15 +272,15 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
 
         # --- Provision VM ---
         FLAVOR=$(echo "$BRANCH" | cut -d'/' -f1)
-        COMMON_ROOTFS="artifacts/qemu/rootfs"
-        BRANCH_ROOTFS="artifacts/qemu/${FLAVOR}/rootfs"
+        COMMON_ROOTFS="artifacts/rootfs"
+        BRANCH_ROOTFS="artifacts/${FLAVOR}/rootfs"
 
         # Resolve the pre-built idekube-healthcheck binary for the VM arch;
         # Ansible installs it into the VM via a copy task.
         HEALTHCHECK_BINARY="$(pwd)/.cache/qemu_tools/idekube-healthcheck.${IMG_ARCH}"
         if [[ ! -f "${HEALTHCHECK_BINARY}" ]]; then
             echo "✗ idekube-healthcheck binary not found: ${HEALTHCHECK_BINARY}"
-            echo "  Run 'make build_qemu_tools' (or 'python3 build.py qemu-build-tools') first."
+            echo "  Run 'bash scripts/shell/prepare_qemu_tools.sh' first."
             exit 1
         fi
         echo "✓ idekube-healthcheck binary resolved: ${HEALTHCHECK_BINARY}"
@@ -250,7 +295,6 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         echo "✓ rootfs copied successfully."
 
         # Apply ansible playbook
-        PLAYBOOK="manifests/qemu/$BRANCH/install.yml"
         if [[ -f "${PLAYBOOK}" ]]; then
             echo "Applying ansible playbook: ${PLAYBOOK}..."
             if command -v ansible-playbook &> /dev/null; then
@@ -267,7 +311,7 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
                 echo "  Install: pip install ansible"
             fi
         else
-            echo "Warning: Playbook not found: ${PLAYBOOK}"
+            echo "Warning: Playbook not found: ${PLAYBOOK}; continuing because REQUIRE_QEMU_PLAYBOOK=false."
         fi
 
         # Copy compiled frontend into nginx html root.
@@ -276,9 +320,13 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         # with a default index and would clobber anything placed there
         # earlier. Copying last ensures our index.html is the one that
         # sticks.
-        if [[ -d "frontend/dist" ]]; then
+        FRONTEND_DIST="frontend/dist"
+        if [[ ! -d "${FRONTEND_DIST}" && -d "${META_ROOT}/frontend/dist" ]]; then
+            FRONTEND_DIST="${META_ROOT}/frontend/dist"
+        fi
+        if [[ -d "${FRONTEND_DIST}" ]]; then
             echo "Copying frontend dist to /usr/share/nginx/html/..."
-            vm_rsync "frontend/dist/" "${SSH_USER}@localhost:/tmp/frontend-dist/"
+            vm_rsync "${FRONTEND_DIST}/" "${SSH_USER}@localhost:/tmp/frontend-dist/"
             vm_ssh "sudo rsync -a /tmp/frontend-dist/ /usr/share/nginx/html/"
             vm_ssh "rm -rf /tmp/frontend-dist"
             echo "✓ Frontend dist copied successfully."

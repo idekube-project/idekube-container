@@ -7,9 +7,9 @@
 # each Dockerfile only references paths inside its own repo.
 #
 # Usage:
-#   docker buildx bake base                      # production build, base lineup, no push
-#   docker buildx bake -f docker-bake.hcl -f docker-bake.staging.hcl base --push
-#   docker buildx bake --print base              # discover (prints JSON)
+#   docker buildx bake universal                 # production build, universal lineup, no push
+#   docker buildx bake -f docker-bake.hcl -f docker-bake.staging.hcl universal --push
+#   docker buildx bake --print universal         # discover (prints JSON)
 #
 # Variable overrides go through env (variable blocks) or --set (target attrs).
 
@@ -55,8 +55,8 @@ variable "QEMU_VERSION"           { default = "10.2.0" }
 # Each entry carries the per-lineup overrides: BASE_IMAGE, TAG_POSTFIX, platforms.
 variable "LINEUPS" {
   default = [
-    { lineup = "base",   base = "ubuntu:24.04",                                  postfix = "",         platforms = ["linux/amd64", "linux/arm64"] },
-    { lineup = "ascend", base = "ascendai/cann:8.3.rc2-910b-ubuntu22.04-py3.11", postfix = "-ascend",  platforms = ["linux/arm64"] }
+    { lineup = "universal", base = "ubuntu:24.04",                                  postfix = "",         platforms = ["linux/amd64", "linux/arm64"] },
+    { lineup = "ascend",    base = "ascendai/cann:8.3.rc2-910b-ubuntu22.04-py3.11", postfix = "-ascend",  platforms = ["linux/arm64"] }
   ]
 }
 
@@ -108,7 +108,7 @@ target "_common" {
 }
 
 # ---------------------------------------------------------------------------
-# featured/* (dual-lineup base, single-lineup derivatives)
+# featured/* (dual-lineup universal/ascend, single-lineup derivatives)
 # ---------------------------------------------------------------------------
 
 target "featured-base" {
@@ -123,7 +123,7 @@ target "featured-base" {
     TAG_POSTFIX = item.postfix
   }
   platforms = item.platforms
-  tags      = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-featured-base:base-${VERSION}${item.postfix}${STAGING_POSTFIX}"]
+  tags      = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-featured-base:${VERSION}${item.postfix}${STAGING_POSTFIX}"]
 }
 
 target "featured-speit" {
@@ -134,7 +134,7 @@ target "featured-speit" {
     artifacts        = "artifacts"
     "healthcheck-src" = "healthcheck"
     "frontend-src"    = "frontend"
-    "base-image"     = "target:featured-base-base"
+    "base-image"     = "target:featured-base-universal"
   }
   args = {
     NAME        = "${NAME_PREFIX}-featured"
@@ -171,7 +171,7 @@ target "featured-dind" {
     artifacts        = "artifacts"
     "healthcheck-src" = "healthcheck"
     "frontend-src"    = "frontend"
-    "base-image"     = "target:featured-base-base"
+    "base-image"     = "target:featured-base-universal"
   }
   args = { NAME = "${NAME_PREFIX}-featured", TAG_POSTFIX = "" }
   tags = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-featured:dind-${VERSION}${STAGING_POSTFIX}"]
@@ -199,7 +199,7 @@ target "featured-ros2" {
     artifacts        = "artifacts"
     "healthcheck-src" = "healthcheck"
     "frontend-src"    = "frontend"
-    "base-image"     = "target:featured-base-base"
+    "base-image"     = "target:featured-base-universal"
   }
   args = { NAME = "${NAME_PREFIX}-featured", TAG_POSTFIX = "" }
   tags = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-featured:ros2-${VERSION}${STAGING_POSTFIX}"]
@@ -218,7 +218,7 @@ target "coder-base" {
     NAME        = "${NAME_PREFIX}-coder-base"
     TAG_POSTFIX = ""
   }
-  tags = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-coder-base:base-${VERSION}${STAGING_POSTFIX}"]
+  tags = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-coder-base:${VERSION}${STAGING_POSTFIX}"]
 }
 
 target "coder-conda" {
@@ -236,7 +236,7 @@ target "coder-conda" {
 }
 
 # ---------------------------------------------------------------------------
-# jupyter/* (dual-lineup base, derivatives split base/ascend)
+# jupyter/* (dual-lineup universal/ascend, derivatives split universal/ascend)
 # ---------------------------------------------------------------------------
 
 target "jupyter-base" {
@@ -251,7 +251,7 @@ target "jupyter-base" {
     TAG_POSTFIX = item.postfix
   }
   platforms = item.platforms
-  tags      = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-jupyter-base:base-${VERSION}${item.postfix}${STAGING_POSTFIX}"]
+  tags      = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-jupyter-base:${VERSION}${item.postfix}${STAGING_POSTFIX}"]
 }
 
 target "jupyter-speit-ai" {
@@ -306,7 +306,7 @@ target "agent-base" {
     NAME        = "${NAME_PREFIX}-agent-base"
     TAG_POSTFIX = ""
   }
-  tags = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-agent-base:base-${VERSION}${STAGING_POSTFIX}"]
+  tags = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-agent-base:${VERSION}${STAGING_POSTFIX}"]
 }
 
 target "agent-openclaw" {
@@ -341,24 +341,24 @@ target "agent-hermes" {
 # Groups
 # ---------------------------------------------------------------------------
 
-# Default group when invoked as `docker buildx bake`. Builds the base lineup.
+# Default group when invoked as `docker buildx bake`. Builds the universal lineup.
 group "default" {
-  targets = ["base"]
+  targets = ["universal"]
 }
 
-# Base lineup: ubuntu-based, multi-arch (amd64+arm64).
-group "base" {
+# Universal lineup: ubuntu-based, multi-arch (amd64+arm64).
+group "universal" {
   targets = [
-    "featured-base-base",
+    "featured-base-universal",
     "featured-speit",
-    "featured-speit-ai-base",
+    "featured-speit-ai-universal",
     "featured-dind",
     "featured-kathara",
     "featured-ros2",
     "coder-base",
     "coder-conda",
-    "jupyter-base-base",
-    "jupyter-speit-ai-base",
+    "jupyter-base-universal",
+    "jupyter-speit-ai-universal",
     "agent-base",
     "agent-openclaw",
     "agent-hermes",
@@ -377,12 +377,12 @@ group "ascend" {
 }
 
 # Per-flavor convenience groups (handy for local dev: `bake featured`).
-group "featured-base-all" { targets = ["featured-base-base", "featured-base-ascend"] }
+group "featured-base-all" { targets = ["featured-base-universal", "featured-base-ascend"] }
 group "featured" {
   targets = [
-    "featured-base-base",
+    "featured-base-universal",
     "featured-speit",
-    "featured-speit-ai-base",
+    "featured-speit-ai-universal",
     "featured-dind",
     "featured-kathara",
     "featured-ros2",
@@ -391,9 +391,9 @@ group "featured" {
 group "coder"   { targets = ["coder-base", "coder-conda"] }
 group "jupyter" {
   targets = [
-    "jupyter-base-base",
+    "jupyter-base-universal",
     "jupyter-base-ascend",
-    "jupyter-speit-ai-base",
+    "jupyter-speit-ai-universal",
     "jupyter-speit-ai-ascend",
     "jupyter-speit-ascendai",
   ]
@@ -402,5 +402,5 @@ group "agent"   { targets = ["agent-base", "agent-openclaw", "agent-hermes"] }
 
 # Build everything (used in CI for combined-mode runs).
 group "all" {
-  targets = ["base", "ascend"]
+  targets = ["universal", "ascend"]
 }

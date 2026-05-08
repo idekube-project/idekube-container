@@ -51,9 +51,9 @@ ACCESS_TOKEN = "test-token-123"
 def pytest_addoption(parser):
     parser.addoption(
         "--lineup",
-        default="base",
-        choices=["base", "ascend"],
-        help="Image lineup to test (base or ascend)",
+        default="universal",
+        choices=["universal", "ascend"],
+        help="Image lineup to test (universal or ascend)",
     )
     parser.addoption(
         "--branch",

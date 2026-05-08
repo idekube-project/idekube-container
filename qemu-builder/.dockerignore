@@ -1,0 +1,10 @@
+.cache/**
+!.cache/
+!.cache/qemu_files/
+!.cache/qemu_files/*.fd
+!.cache/qemu_files/qemu-*.tar.xz
+!.cache/*/
+!.cache/*/*/
+!.cache/*/*/images/
+!.cache/*/*/images/root.img
+

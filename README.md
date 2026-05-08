@@ -12,37 +12,37 @@ This is the **meta-repository** that owns the centralized build system. Image re
 
 ### Build system (here)
 
-| Path | Description |
-|------|-------------|
-| `docker-bake.hcl` | All bake targets, groups, dependency DAG, build args |
-| `docker-bake.staging.hcl` | Staging override (sets `STAGING_POSTFIX="-staging"`) |
-| `docker-bake.production.hcl` | Production override (GHA cache) |
-| `Makefile` | Thin wrappers around `docker buildx bake` + tests |
-| `tests/` | pytest + Playwright suite, parametrized per branch |
-| `.github/workflows/publish.yml` | Single CI: tag → production, main → staging |
-| `scripts/tag-stable.sh` | Post-publish stable-tag aliasing helper |
-| `qemu-builder/` | QEMU/Ansible nested-VM build pipeline |
+| Path                            | Description                                          |
+| ------------------------------- | ---------------------------------------------------- |
+| `docker-bake.hcl`               | All bake targets, groups, dependency DAG, build args |
+| `docker-bake.staging.hcl`       | Staging override (sets `STAGING_POSTFIX="-staging"`) |
+| `docker-bake.production.hcl`    | Production override (GHA cache)                      |
+| `Makefile`                      | Thin wrappers around `docker buildx bake` + tests    |
+| `tests/`                        | pytest + Playwright suite, parametrized per branch   |
+| `.github/workflows/publish.yml` | Single CI: tag → production, main → staging          |
+| `scripts/tag-stable.sh`         | Post-publish stable-tag aliasing helper              |
+| `qemu-builder/`                 | QEMU/Ansible nested-VM build pipeline                |
 
 ### Submodules
 
-| Submodule | Repository | Description |
-|-----------|------------|-------------|
-| [`artifacts/`](artifacts/) | [idekube-container-artifacts](https://github.com/idekube-project/idekube-container-artifacts) | Shared install scripts and common rootfs overlay |
-| [`frontend/`](frontend/) | [idekube-container-frontend](https://github.com/idekube-project/idekube-container-frontend) | Vue.js landing page (built inside Docker via named context) |
+| Submodule                      | Repository                                                                                        | Description                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [`artifacts/`](artifacts/)     | [idekube-container-artifacts](https://github.com/idekube-project/idekube-container-artifacts)     | Shared install scripts and common rootfs overlay                  |
+| [`frontend/`](frontend/)       | [idekube-container-frontend](https://github.com/idekube-project/idekube-container-frontend)       | Vue.js landing page (built inside Docker via named context)       |
 | [`healthcheck/`](healthcheck/) | [idekube-container-healthcheck](https://github.com/idekube-project/idekube-container-healthcheck) | Go health check server (compiled inside Docker via named context) |
 
 ### Image submodules
 
-| Submodule | GHCR repo | Variants | Base |
-|-----------|-----------|----------|------|
-| [`images/featured-base/`](images/featured-base/) | `idekube-container-featured-base` | `base` | `ubuntu:24.04` / `ascendai/cann` |
-| [`images/featured/`](images/featured/) | `idekube-container-featured` | `speit`, `speit-ai`, `dind`, `kathara`, `ros2` | `featured/base` |
-| [`images/coder-base/`](images/coder-base/) | `idekube-container-coder-base` | `base` | `ubuntu:24.04` |
-| [`images/coder/`](images/coder/) | `idekube-container-coder` | `conda` | `coder/base` |
-| [`images/jupyter-base/`](images/jupyter-base/) | `idekube-container-jupyter-base` | `base` | `ubuntu:24.04` / `ascendai/cann` |
-| [`images/jupyter/`](images/jupyter/) | `idekube-container-jupyter` | `speit-ai`, `speit-ascendai` | `jupyter/base` |
-| [`images/agent-base/`](images/agent-base/) | `idekube-container-agent-base` | `base` | `ubuntu:24.04` |
-| [`images/agent/`](images/agent/) | `idekube-container-agent` | `openclaw`, `hermes` | `agent/base` |
+| Submodule                                        | GHCR repo                         | Variants                                       | Base                             |
+| ------------------------------------------------ | --------------------------------- | ---------------------------------------------- | -------------------------------- |
+| [`images/featured-base/`](images/featured-base/) | `idekube-container-featured-base` | `base`                                         | `ubuntu:24.04` / `ascendai/cann` |
+| [`images/featured/`](images/featured/)           | `idekube-container-featured`      | `speit`, `speit-ai`, `dind`, `kathara`, `ros2` | `featured/base`                  |
+| [`images/coder-base/`](images/coder-base/)       | `idekube-container-coder-base`    | `base`                                         | `ubuntu:24.04`                   |
+| [`images/coder/`](images/coder/)                 | `idekube-container-coder`         | `conda`                                        | `coder/base`                     |
+| [`images/jupyter-base/`](images/jupyter-base/)   | `idekube-container-jupyter-base`  | `base`                                         | `ubuntu:24.04` / `ascendai/cann` |
+| [`images/jupyter/`](images/jupyter/)             | `idekube-container-jupyter`       | `speit-ai`, `speit-ascendai`                   | `jupyter/base`                   |
+| [`images/agent-base/`](images/agent-base/)       | `idekube-container-agent-base`    | `base`                                         | `ubuntu:24.04`                   |
+| [`images/agent/`](images/agent/)                 | `idekube-container-agent`         | `openclaw`, `hermes`                           | `agent/base`                     |
 
 ## Architecture
 
@@ -57,16 +57,16 @@ This is the **meta-repository** that owns the centralized build system. Image re
 
 All services are reverse-proxied by Nginx on port 80:
 
-| Endpoint | Service |
-|----------|---------|
-| `/` | Landing page (auto-detects available services) |
-| `/coder` | Coder service |
-| `/jupyter` | Jupyter service |
-| `/vnc` | noVNC service |
-| `/agent` | openclaw agent gateway |
-| `/terminal` | ttyd web terminal |
-| `/ssh` | Websocat-proxied SSH |
-| `/health` | Health check endpoint (no auth, JSON, for k8s probes) |
+| Endpoint    | Service                                               |
+| ----------- | ----------------------------------------------------- |
+| `/`         | Landing page (auto-detects available services)        |
+| `/coder`    | Coder service                                         |
+| `/jupyter`  | Jupyter service                                       |
+| `/vnc`      | noVNC service                                         |
+| `/agent`    | openclaw agent gateway                                |
+| `/terminal` | ttyd web terminal                                     |
+| `/ssh`      | Websocat-proxied SSH                                  |
+| `/health`   | Health check endpoint (no auth, JSON, for k8s probes) |
 
 ### Build system at a glance
 
@@ -74,14 +74,14 @@ All services are reverse-proxied by Nginx on port 80:
 
 1. Walks the dependency DAG via `target:` named contexts (no separate Python orchestrator).
 2. Sets `--build-context artifacts=./artifacts`, `--build-context healthcheck-src=./healthcheck`, `--build-context frontend-src=./frontend` on every target so each Dockerfile only references its own image-repo tree.
-3. For matrix-expanded dual-lineup images, generates `<name>-base` and `<name>-ascend` variants with the right `BASE_IMAGE` and `platforms`.
-4. Tags as `ghcr.io/idekube-project/idekube-container-<flavor>:<variant>-<VERSION>[-ascend][-staging]`.
+3. For matrix-expanded dual-lineup images, generates `<name>-universal` and `<name>-ascend` variants with the right `BASE_IMAGE` and `platforms`.
+4. Tags base repos as `<VERSION>[-ascend][-staging]` and application repos as `<variant>-<VERSION>[-ascend][-staging]`.
 
 Bake schedules independent targets in parallel and resolves dependencies automatically.
 
 ### Dependency graph
 
-```
+```text
 featured/base ──> featured/speit
               ──> featured/speit-ai
               ──> featured/dind ──> featured/kathara
@@ -110,35 +110,37 @@ make prepare
 
 ```bash
 # Single target, host arch, loaded into local docker
-make bake TARGET=featured-base-base
+make bake TARGET=featured-base-universal
 make bake TARGET=agent-openclaw
 
 # Inspect the bake plan as JSON
-make discover GROUP=base
+make discover GROUP=universal
 ```
 
 ### Multi-arch build (staging)
 
 ```bash
 # Builds for both linux/amd64 and linux/arm64
-make bake-staging GROUP=base
+make bake-staging GROUP=universal
 
 # Or push to GHCR with -staging tag postfix
-make push-staging GROUP=base
+make push-staging GROUP=universal
 ```
 
 ### Multi-arch publish (production)
 
 ```bash
 # After git tag v1.0.0:
-VERSION=v1.0.0 make push-production GROUP=base
+VERSION=v1.0.0 make push-production GROUP=universal
 VERSION=v1.0.0 make push-production GROUP=ascend
 
-# Then alias as stable
-make tag-stable BRANCH=featured/base VERSION=v1.0.0
-make tag-stable BRANCH=coder/base   VERSION=v1.0.0
-make tag-stable BRANCH=jupyter/base VERSION=v1.0.0
-make tag-stable BRANCH=agent/base   VERSION=v1.0.0
+# Then alias base images as stable
+make tag-stable BRANCH=featured/base VERSION=v1.0.0 LINEUP=universal
+make tag-stable BRANCH=coder/base    VERSION=v1.0.0 LINEUP=universal
+make tag-stable BRANCH=jupyter/base  VERSION=v1.0.0 LINEUP=universal
+make tag-stable BRANCH=agent/base    VERSION=v1.0.0 LINEUP=universal
+make tag-stable BRANCH=featured/base VERSION=v1.0.0 LINEUP=ascend
+make tag-stable BRANCH=jupyter/base  VERSION=v1.0.0 LINEUP=ascend
 ```
 
 In CI, tag pushes (`v*`) trigger the production workflow; pushes to `main` trigger the staging workflow.
@@ -149,7 +151,7 @@ In CI, tag pushes (`v*`) trigger the production workflow; pushes to `main` trigg
 # docker-compose.yml
 services:
   idekube_container:
-    image: ghcr.io/idekube-project/idekube-container-featured-base:base-stable
+    image: ghcr.io/idekube-project/idekube-container-featured-base:stable
     ports:
       - "3000:80"
     volumes:
@@ -172,45 +174,45 @@ volumes:
 
 Pre-built images are published on [GitHub Container Registry](https://github.com/orgs/idekube-project/packages?repo_name=idekube-container).
 
-### Standard tags (base image: `ubuntu:24.04`)
+### Universal tags (base image: `ubuntu:24.04`)
 
-| Image | Repo | Variant tag | Description |
-|-------|------|-------------|-------------|
-| `featured-base` | `idekube-container-featured-base` | `base-<version>` | Full desktop (XFCE + noVNC) + Coder + SSH + Miniconda + VirtualGL |
-| `featured-speit` | `idekube-container-featured` | `speit-<version>` | + dev tools + Python scientific stack + Iverilog + Digital |
-| `featured-speit-ai` | `idekube-container-featured` | `speit-ai-<version>` | + dev tools + PyTorch conda environment |
-| `featured-dind` | `idekube-container-featured` | `dind-<version>` | + Docker-in-Docker (dockerd, buildx, compose) |
-| `featured-kathara` | `idekube-container-featured` | `kathara-<version>` | featured-dind + Kathara network emulation |
-| `featured-ros2` | `idekube-container-featured` | `ros2-<version>` | + ROS 2 Jazzy desktop-full + Gazebo + MoveIt |
-| `coder-base` | `idekube-container-coder-base` | `base-<version>` | Coder IDE + SSH, minimal install |
-| `coder-conda` | `idekube-container-coder` | `conda-<version>` | coder-base + Miniconda |
-| `jupyter-base` | `idekube-container-jupyter-base` | `base-<version>` | JupyterLab + SSH + Miniconda |
-| `jupyter-speit-ai` | `idekube-container-jupyter` | `speit-ai-<version>` | + scientific stack + PyTorch conda environment |
-| `agent-base` | `idekube-container-agent-base` | `base-<version>` | Claude Code + opencode + document toolchain + ttyd + SSH |
-| `agent-openclaw` | `idekube-container-agent` | `openclaw-<version>` | + openclaw gateway at `/agent` |
-| `agent-hermes` | `idekube-container-agent` | `hermes-<version>` | + Hermes Agent CLI + gateway |
+| Image               | Repo                              | Variant tag          | Description                                                       |
+| ------------------- | --------------------------------- | -------------------- | ----------------------------------------------------------------- |
+| `featured-base`     | `idekube-container-featured-base` | `<version>`          | Full desktop (XFCE + noVNC) + Coder + SSH + Miniconda + VirtualGL |
+| `featured-speit`    | `idekube-container-featured`      | `speit-<version>`    | + dev tools + Python scientific stack + Iverilog + Digital        |
+| `featured-speit-ai` | `idekube-container-featured`      | `speit-ai-<version>` | + dev tools + PyTorch conda environment                           |
+| `featured-dind`     | `idekube-container-featured`      | `dind-<version>`     | + Docker-in-Docker (dockerd, buildx, compose)                     |
+| `featured-kathara`  | `idekube-container-featured`      | `kathara-<version>`  | featured-dind + Kathara network emulation                         |
+| `featured-ros2`     | `idekube-container-featured`      | `ros2-<version>`     | + ROS 2 Jazzy desktop-full + Gazebo + MoveIt                      |
+| `coder-base`        | `idekube-container-coder-base`    | `<version>`          | Coder IDE + SSH, minimal install                                  |
+| `coder-conda`       | `idekube-container-coder`         | `conda-<version>`    | coder-base + Miniconda                                            |
+| `jupyter-base`      | `idekube-container-jupyter-base`  | `<version>`          | JupyterLab + SSH + Miniconda                                      |
+| `jupyter-speit-ai`  | `idekube-container-jupyter`       | `speit-ai-<version>` | + scientific stack + PyTorch conda environment                    |
+| `agent-base`        | `idekube-container-agent-base`    | `<version>`          | Claude Code + opencode + document toolchain + ttyd + SSH          |
+| `agent-openclaw`    | `idekube-container-agent`         | `openclaw-<version>` | + openclaw gateway at `/agent`                                    |
+| `agent-hermes`      | `idekube-container-agent`         | `hermes-<version>`   | + Hermes Agent CLI + gateway                                      |
 
 ### Ascend tags (base image: `ascendai/cann`, ARM64 only)
 
 Tags are suffixed with `-ascend`.
 
-| Image | Repo | Variant tag | Description |
-|-------|------|-------------|-------------|
-| `featured-base` | `idekube-container-featured-base` | `base-<version>-ascend` | Full desktop with Ascend NPU support |
-| `featured-speit-ai` | `idekube-container-featured` | `speit-ai-<version>-ascend` | Desktop + PyTorch with Ascend NPU |
-| `jupyter-base` | `idekube-container-jupyter-base` | `base-<version>-ascend` | JupyterLab with Ascend NPU support |
-| `jupyter-speit-ai` | `idekube-container-jupyter` | `speit-ai-<version>-ascend` | JupyterLab + PyTorch with Ascend NPU |
-| `jupyter-speit-ascendai` | `idekube-container-jupyter` | `speit-ascendai-<version>-ascend` | JupyterLab purpose-built for Ascend |
+| Image                    | Repo                              | Variant tag                       | Description                          |
+| ------------------------ | --------------------------------- | --------------------------------- | ------------------------------------ |
+| `featured-base`          | `idekube-container-featured-base` | `<version>-ascend`                | Full desktop with Ascend NPU support |
+| `featured-speit-ai`      | `idekube-container-featured`      | `speit-ai-<version>-ascend`       | Desktop + PyTorch with Ascend NPU    |
+| `jupyter-base`           | `idekube-container-jupyter-base`  | `<version>-ascend`                | JupyterLab with Ascend NPU support   |
+| `jupyter-speit-ai`       | `idekube-container-jupyter`       | `speit-ai-<version>-ascend`       | JupyterLab + PyTorch with Ascend NPU |
+| `jupyter-speit-ascendai` | `idekube-container-jupyter`       | `speit-ascendai-<version>-ascend` | JupyterLab purpose-built for Ascend  |
 
 ## Runtime configuration
 
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `IDEKUBE_INIT_HOME` | Initialize home from `/etc/skel` | empty |
-| `IDEKUBE_PREFERED_SHELL` | Path to preferred shell | `/bin/bash` |
-| `IDEKUBE_USER_UID` | Override container user UID | empty |
-| `IDEKUBE_AUTHORIZED_KEYS` | Base64-encoded SSH authorized keys | empty |
-| `IDEKUBE_ACCESS_TOKEN` | Nginx-level web auth token (excludes `/ssh`) | empty |
+| Variable                  | Purpose                                      | Default     |
+| ------------------------- | -------------------------------------------- | ----------- |
+| `IDEKUBE_INIT_HOME`       | Initialize home from `/etc/skel`             | empty       |
+| `IDEKUBE_PREFERED_SHELL`  | Path to preferred shell                      | `/bin/bash` |
+| `IDEKUBE_USER_UID`        | Override container user UID                  | empty       |
+| `IDEKUBE_AUTHORIZED_KEYS` | Base64-encoded SSH authorized keys           | empty       |
+| `IDEKUBE_ACCESS_TOKEN`    | Nginx-level web auth token (excludes `/ssh`) | empty       |
 
 ### SSH proxy
 
