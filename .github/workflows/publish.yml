@@ -1,17 +1,12 @@
-name: publish
+name: publish-staging
 
 on:
+  pull_request:
+    branches: [main]
   push:
-    tags: ["v*"]
     branches: [main]
   workflow_dispatch:
     inputs:
-      mode:
-        description: "production or staging"
-        required: true
-        type: choice
-        options: [production, staging]
-        default: staging
       lineup:
         description: "universal, ascend, or both"
         required: false
@@ -49,68 +44,24 @@ jobs:
         if: env.SKIP != '1'
 
       - uses: docker/login-action@v3
-        if: env.SKIP != '1'
+        if: env.SKIP != '1' && github.event_name != 'pull_request'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve mode and version
-        id: vars
-        if: env.SKIP != '1'
-        run: |
-          # Determine mode
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            MODE="${{ github.event.inputs.mode }}"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            MODE="production"
-          else
-            MODE="staging"
-          fi
-
-          # Determine version
-          if [[ "$MODE" == "production" && "${{ github.ref_type }}" == "tag" ]]; then
-            VERSION="${{ github.ref_name }}"
-          elif [[ "$MODE" == "production" ]]; then
-            VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo latest)"
-          else
-            VERSION="${GITHUB_SHA::7}"
-          fi
-
-          # Pick override file
-          if [[ "$MODE" == "production" ]]; then
-            FILES="docker-bake.hcl,docker-bake.production.hcl"
-          else
-            FILES="docker-bake.hcl,docker-bake.staging.hcl"
-          fi
-
-          echo "mode=$MODE" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "files=$FILES" >> $GITHUB_OUTPUT
-          echo "Mode=$MODE Version=$VERSION Files=$FILES"
-
-      - name: Build and push (${{ matrix.lineup }} / ${{ steps.vars.outputs.mode }})
-        if: env.SKIP != '1'
+      - name: Build staging images for PR validation (${{ matrix.lineup }})
+        if: env.SKIP != '1' && github.event_name == 'pull_request'
         uses: docker/bake-action@v7
-        env:
-          VERSION: ${{ steps.vars.outputs.version }}
         with:
-          files: ${{ steps.vars.outputs.files }}
+          files: docker-bake.hcl,docker-bake.staging.hcl
+          targets: ${{ matrix.lineup }}
+          push: false
+
+      - name: Build and push staging images (${{ matrix.lineup }})
+        if: env.SKIP != '1' && github.event_name != 'pull_request'
+        uses: docker/bake-action@v7
+        with:
+          files: docker-bake.hcl,docker-bake.staging.hcl
           targets: ${{ matrix.lineup }}
           push: true
-
-      - name: Tag stable (production only)
-        if: env.SKIP != '1' && steps.vars.outputs.mode == 'production'
-        env:
-          VERSION: ${{ steps.vars.outputs.version }}
-          LINEUP: ${{ matrix.lineup }}
-        run: |
-          # Retag every base repo's release tag as stable for this lineup only.
-          # Derived repos do not get stable aliases (they FROM the base stable).
-          base_branches="featured/base coder/base jupyter/base agent/base"
-          for branch in $base_branches; do
-            if [[ "${{ matrix.lineup }}" == "ascend" ]] && [[ "$branch" != "featured/base" ]] && [[ "$branch" != "jupyter/base" ]]; then
-              continue
-            fi
-            ./scripts/tag-stable.sh "$branch" "$VERSION" "$LINEUP"
-          done
