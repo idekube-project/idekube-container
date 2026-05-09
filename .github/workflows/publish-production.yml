@@ -1,0 +1,99 @@
+name: publish-production
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version tag. Defaults to the latest reachable git tag."
+        required: false
+        type: string
+      lineup:
+        description: "universal, ascend, or both"
+        required: false
+        type: choice
+        options: [universal, ascend, both]
+        default: both
+
+jobs:
+  publish:
+    name: ${{ matrix.lineup }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        lineup: [universal, ascend]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Skip lineup if dispatch selected the other one
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.lineup != 'both' && github.event.inputs.lineup != matrix.lineup }}
+        run: |
+          echo "Skipping ${{ matrix.lineup }} (dispatch selected ${{ github.event.inputs.lineup }})"
+          echo "SKIP=1" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-qemu-action@v3
+        if: env.SKIP != '1'
+
+      - uses: docker/setup-buildx-action@v3
+        if: env.SKIP != '1'
+
+      - uses: docker/login-action@v3
+        if: env.SKIP != '1'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve production version
+        id: vars
+        if: env.SKIP != '1'
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          elif [[ -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          fi
+
+          if [[ -z "$VERSION" ]]; then
+            echo "Unable to determine production VERSION. Provide the dispatch version input or create a git tag first." >&2
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version=$VERSION"
+
+      - name: Build and push production images (${{ matrix.lineup }})
+        if: env.SKIP != '1'
+        uses: docker/bake-action@v7
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        with:
+          files: docker-bake.hcl,docker-bake.production.hcl
+          targets: ${{ matrix.lineup }}
+          push: true
+
+      - name: Tag stable
+        if: env.SKIP != '1'
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+          LINEUP: ${{ matrix.lineup }}
+        run: |
+          # Retag every base repo's release tag as stable for this lineup only.
+          # Derived repos do not get stable aliases (they FROM the base stable).
+          base_branches="featured/base coder/base jupyter/base agent/base"
+          for branch in $base_branches; do
+            if [[ "${{ matrix.lineup }}" == "ascend" ]] && [[ "$branch" != "featured/base" ]] && [[ "$branch" != "jupyter/base" ]]; then
+              continue
+            fi
+            ./scripts/tag-stable.sh "$branch" "$VERSION" "$LINEUP"
+          done

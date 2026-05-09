@@ -19,7 +19,8 @@ This is the **meta-repository** that owns the centralized build system. Image re
 | `docker-bake.production.hcl`    | Production override (GHA cache)                      |
 | `Makefile`                      | Thin wrappers around `docker buildx bake` + tests    |
 | `tests/`                        | pytest + Playwright suite, parametrized per branch   |
-| `.github/workflows/publish.yml` | Single CI: tag → production, main → staging          |
+| `.github/workflows/publish.yml` | Staging CI for PRs, `main`, and manual dispatch      |
+| `.github/workflows/publish-production.yml` | Production publish on releases or manual dispatch |
 | `scripts/tag-stable.sh`         | Post-publish stable-tag aliasing helper              |
 | `qemu-builder/`                 | QEMU/Ansible nested-VM build pipeline                |
 
@@ -143,7 +144,7 @@ make tag-stable BRANCH=featured/base VERSION=v1.0.0 LINEUP=ascend
 make tag-stable BRANCH=jupyter/base  VERSION=v1.0.0 LINEUP=ascend
 ```
 
-In CI, tag pushes (`v*`) trigger the production workflow; pushes to `main` trigger the staging workflow.
+In CI, GitHub releases and manual dispatches trigger the production workflow; PRs and pushes to `main` trigger the staging workflow.
 
 ### Run a pre-built image
 

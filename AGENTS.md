@@ -12,11 +12,12 @@ The build system is **centralized**: a single `docker-bake.hcl` at the meta-repo
 
 - **`docker-bake.hcl`** — Source-of-truth bake configuration: all targets, groups, the dependency DAG (via `target:` named contexts), and per-target build args. Replaces the old `docker-builder/build.py` Python orchestrator.
 - **`docker-bake.staging.hcl`** — Override file. Sets `STAGING_POSTFIX="-staging"` and `VERSION="edge"` (overridable via env). Layered after the main file with `-f`.
-- **`docker-bake.production.hcl`** — Override file for tag-push releases. Adds GHA build cache.
+- **`docker-bake.production.hcl`** — Override file for production releases. Adds GHA build cache.
 - **`Makefile`** — Thin wrappers around `docker buildx bake` plus the test-suite entry points.
 - **`scripts/tag-stable.sh`** — Post-publish helper that creates stable aliases via `docker buildx imagetools create`.
 - **`tests/`** — pytest + Playwright test suite (parametrized per branch) for end-to-end verification.
-- **`.github/workflows/publish.yml`** — Single CI workflow. Tag pushes → production; `main` branch pushes → staging. Uses `docker/bake-action@v7` with a `[universal, ascend]` job matrix.
+- **`.github/workflows/publish.yml`** — Staging workflow for PRs, `main` branch pushes, and manual dispatch.
+- **`.github/workflows/publish-production.yml`** — Production workflow for GitHub releases and manual dispatch. Uses `docker/bake-action@v7` with a `[universal, ascend]` job matrix.
 - **`artifacts/`** (submodule) — Shared install scripts and common rootfs overlay. Mounted into builds via `--build-context artifacts=...`.
 - **`frontend/`** (submodule) — Vue 3 + TypeScript + Vite landing page **source**. Built inside the bake-driven Docker stage via `--build-context frontend-src=...`.
 - **`healthcheck/`** (submodule) — Go HTTP health server **source**. Compiled inside the bake-driven Docker stage via `--build-context healthcheck-src=...`.
@@ -115,9 +116,9 @@ Tag templates: base repos use `<VERSION>[-ascend][-staging]`; application repos 
 
 ## CI/CD
 
-Single workflow at `.github/workflows/publish.yml`:
+Two workflows under `.github/workflows/`:
 
-- **Triggers**: tag push `v*` (production), `main` branch push (staging), manual dispatch.
+- **Triggers**: `publish.yml` runs staging builds for PRs, `main` branch pushes, and manual dispatch; `publish-production.yml` runs production builds for GitHub releases and manual dispatch.
 - **Matrix**: `lineup: [universal, ascend]` runs in parallel.
 - **Auth**: `GITHUB_TOKEN` → GHCR.
 - **Action**: `docker/bake-action@v7` with `targets: <lineup>`, `files: docker-bake.hcl,<override>`, `push: true`. Bake's BuildKit solver schedules dependency targets first within a lineup.
@@ -148,6 +149,6 @@ These were part of the previous decentralized layout and have been removed:
 
 - `docker-builder/` submodule + `build.py` (replaced by `docker-bake.hcl`)
 - Per-image-repo `Makefile`, `config.json`, `.dockerargs.{base,ascend}`, `CLAUDE.md`, `README.md`
-- Per-image-repo `.github/workflows/publish.yml` (8 of them) — replaced by single meta-repo workflow
+- Per-image-repo `.github/workflows/publish.yml` (8 of them) — replaced by central meta-repo workflows
 - Per-image-repo `third_party/` symlink farms (replaced by named contexts)
 - `qemu-builder/` submodule (folded into meta-repo as plain content)
