@@ -1,0 +1,95 @@
+name: publish-agent-openclaw-scheduled
+
+on:
+  schedule:
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
+
+jobs:
+  publish-openclaw:
+    concurrency:
+      group: publish-agent-openclaw-scheduled
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      OPENCLAW_REPO: openclaw/openclaw
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Resolve latest OpenClaw release metadata
+        id: openclaw
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          release_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${OPENCLAW_REPO}/releases/latest")"
+
+          image_version="$(jq -r '.tag_name' <<<"$release_json")"
+          if [[ -z "$image_version" || "$image_version" == "null" ]]; then
+            echo "Unable to resolve OpenClaw release tag from ${OPENCLAW_REPO}." >&2
+            exit 1
+          fi
+
+          release_name="$(jq -r '.name // empty' <<<"$release_json")"
+          release_tag="$(jq -r '.tag_name // empty' <<<"$release_json")"
+
+          # Upstream may format release titles differently over time.
+          # Extract the first 20xx.x.x token from name first, then tag.
+          openclaw_version="$(printf '%s\n%s\n' "$release_name" "$release_tag" | grep -Eo '20[0-9]{2}\.[0-9]{1,2}\.[0-9]{1,2}' | head -n1 || true)"
+          if [[ ! "$openclaw_version" =~ ^[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
+            echo "Unable to extract upstream OpenClaw version (20xx.x.x) from release name/tag. name='$release_name' tag='$release_tag'." >&2
+            exit 1
+          fi
+
+          full_version="${image_version}-${openclaw_version}"
+
+          echo "image_version=$image_version" >> "$GITHUB_OUTPUT"
+          echo "openclaw_version=$openclaw_version" >> "$GITHUB_OUTPUT"
+          echo "full_version=$full_version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Docker build environment
+        uses: ./.github/actions/setup-docker-buildx
+        with:
+          login: 'true'
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip when image already exists
+        id: exists
+        run: |
+          set +e
+          docker buildx imagetools inspect "ghcr.io/idekube-project/idekube-container-agent:openclaw-${{ steps.openclaw.outputs.full_version }}" >/dev/null 2>&1
+          found=$?
+          set -e
+          if [[ "$found" -eq 0 ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push agent-openclaw
+        if: steps.exists.outputs.exists != 'true'
+        uses: docker/bake-action@v7
+        env:
+          VERSION: ${{ steps.openclaw.outputs.full_version }}
+          OPENCLAW_VERSION: ${{ steps.openclaw.outputs.openclaw_version }}
+        with:
+          files: docker-bake.hcl
+          targets: agent-openclaw
+          push: true
+
+      - name: Summary
+        run: |
+          if [[ "${{ steps.exists.outputs.exists }}" == "true" ]]; then
+            echo "Image already exists; nothing to do." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Published: ghcr.io/idekube-project/idekube-container-agent:openclaw-${{ steps.openclaw.outputs.full_version }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "OPENCLAW_VERSION=${{ steps.openclaw.outputs.openclaw_version }}" >> "$GITHUB_STEP_SUMMARY"
+          fi
