@@ -37,16 +37,11 @@ jobs:
           echo "Skipping ${{ matrix.lineup }} (dispatch selected ${{ github.event.inputs.lineup }})"
           echo "SKIP=1" >> $GITHUB_ENV
 
-      - uses: docker/setup-qemu-action@v3
+      - name: Setup Docker build environment
         if: env.SKIP != '1'
-
-      - uses: docker/setup-buildx-action@v3
-        if: env.SKIP != '1'
-
-      - uses: docker/login-action@v3
-        if: env.SKIP != '1' && github.event_name != 'pull_request'
+        uses: ./.github/actions/setup-docker-buildx
         with:
-          registry: ghcr.io
+          login: ${{ github.event_name != 'pull_request' }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
