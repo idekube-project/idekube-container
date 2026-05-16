@@ -41,7 +41,7 @@ This is the **meta-repository** that owns the centralized build system. Image re
 | [`images/coder-base/`](images/coder-base/)       | `idekube-container-coder-base`    | `base`                                         | `ubuntu:24.04`                   |
 | [`images/coder/`](images/coder/)                 | `idekube-container-coder`         | `conda`                                        | `coder/base`                     |
 | [`images/jupyter-base/`](images/jupyter-base/)   | `idekube-container-jupyter-base`  | `base`                                         | `ubuntu:24.04` / `ascendai/cann` |
-| [`images/jupyter/`](images/jupyter/)             | `idekube-container-jupyter`       | `speit-ai`, `speit-ascendai`                   | `jupyter/base`                   |
+| [`images/jupyter/`](images/jupyter/)             | `idekube-container-jupyter`       | `speit-ai`                                     | `jupyter/base`                   |
 | [`images/agent-base/`](images/agent-base/)       | `idekube-container-agent-base`    | `base`                                         | `ubuntu:24.04`                   |
 | [`images/agent/`](images/agent/)                 | `idekube-container-agent`         | `openclaw`, `hermes`                           | `agent/base`                     |
 
@@ -51,7 +51,7 @@ This is the **meta-repository** that owns the centralized build system. Image re
 
 - **`featured/`** — Full desktop with Coder + noVNC (TurboVNC + VirtualGL) + SSH. Variants: `base`, `speit`, `speit-ai`, `dind`, `kathara`, `ros2`
 - **`coder/`** — Coder IDE only + SSH. Variants: `base`, `conda`
-- **`jupyter/`** — JupyterLab only + SSH. Variants: `base`, `speit-ai`, `speit-ascendai`
+- **`jupyter/`** — JupyterLab only + SSH. Variants: `base`, `speit-ai`
 - **`agent/`** — AI agent toolchain (Claude Code + opencode + document processing) + ttyd web terminal + SSH. Variants: `base`, `openclaw`, `hermes`
 
 ### Service endpoints
@@ -91,7 +91,6 @@ featured/base ──> featured/speit
 coder/base ──> coder/conda
 
 jupyter/base ──> jupyter/speit-ai
-             ──> jupyter/speit-ascendai
 
 agent/base ──> agent/openclaw
            ──> agent/hermes
@@ -203,7 +202,6 @@ Tags are suffixed with `-ascend`.
 | `featured-speit-ai`      | `idekube-container-featured`      | `speit-ai-<version>-ascend`       | Desktop + PyTorch with Ascend NPU    |
 | `jupyter-base`           | `idekube-container-jupyter-base`  | `<version>-ascend`                | JupyterLab with Ascend NPU support   |
 | `jupyter-speit-ai`       | `idekube-container-jupyter`       | `speit-ai-<version>-ascend`       | JupyterLab + PyTorch with Ascend NPU |
-| `jupyter-speit-ascendai` | `idekube-container-jupyter`       | `speit-ascendai-<version>-ascend` | JupyterLab purpose-built for Ascend  |
 
 ## Runtime configuration
 

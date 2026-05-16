@@ -274,25 +274,6 @@ target "jupyter-speit-ai" {
   tags      = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-jupyter:speit-ai-${VERSION}${item.postfix}${STAGING_POSTFIX}"]
 }
 
-# Single-lineup target: only exists on ascend (CANN base).
-target "jupyter-speit-ascendai" {
-  inherits   = ["_common"]
-  context    = "images/jupyter"
-  dockerfile = "docker/speit-ascendai/Dockerfile"
-  contexts   = {
-    artifacts        = "artifacts"
-    "healthcheck-src" = "healthcheck"
-    "frontend-src"    = "frontend"
-    "base-image"     = "target:jupyter-base-ascend"
-  }
-  args = {
-    NAME        = "${NAME_PREFIX}-jupyter"
-    TAG_POSTFIX = "-ascend"
-  }
-  platforms = ["linux/arm64"]
-  tags      = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-jupyter:speit-ascendai-${VERSION}-ascend${STAGING_POSTFIX}"]
-}
-
 # ---------------------------------------------------------------------------
 # agent/*
 # ---------------------------------------------------------------------------
@@ -372,7 +353,6 @@ group "ascend" {
     "featured-speit-ai-ascend",
     "jupyter-base-ascend",
     "jupyter-speit-ai-ascend",
-    "jupyter-speit-ascendai",
   ]
 }
 
@@ -395,7 +375,6 @@ group "jupyter" {
     "jupyter-base-ascend",
     "jupyter-speit-ai-universal",
     "jupyter-speit-ai-ascend",
-    "jupyter-speit-ascendai",
   ]
 }
 group "agent"   { targets = ["agent-base", "agent-openclaw", "agent-hermes"] }

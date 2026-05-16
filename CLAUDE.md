@@ -102,7 +102,7 @@ Per-flavor GHCR repos. Each image submodule publishes to its own repo:
 | `ghcr.io/idekube-project/idekube-container-coder-base` | `base` |
 | `ghcr.io/idekube-project/idekube-container-coder` | `conda` |
 | `ghcr.io/idekube-project/idekube-container-jupyter-base` | `base` |
-| `ghcr.io/idekube-project/idekube-container-jupyter` | `speit-ai`, `speit-ascendai` |
+| `ghcr.io/idekube-project/idekube-container-jupyter` | `speit-ai` |
 | `ghcr.io/idekube-project/idekube-container-agent-base` | `base` |
 | `ghcr.io/idekube-project/idekube-container-agent` | `openclaw`, `hermes` |
 
