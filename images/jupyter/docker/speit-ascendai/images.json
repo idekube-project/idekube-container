@@ -1,4 +1,0 @@
-{
-  "branch": "jupyter/speit-ascendai",
-  "depends_on": "jupyter/base"
-}
