@@ -5,7 +5,7 @@
 #   ./scripts/tag-stable.sh <branch> [version] [lineup]
 #
 # Where:
-#   branch  is in slash-form, e.g. featured/base, agent/openclaw, jupyter/speit-ascendai
+#   branch  is in slash-form, e.g. featured/base, agent/openclaw, jupyter/speit-ai
 #   version defaults to the current git tag (`git describe --tags --abbrev=0`).
 #   lineup  is universal, ascend, or all; defaults to $LINEUP or universal.
 #
@@ -16,7 +16,7 @@
 #   featured/speit               -> idekube-container-featured      : speit-<version>
 #   featured/speit-ai            (also takes -ascend variant)
 #   coder/base, coder/conda
-#   jupyter/base, jupyter/speit-ai, jupyter/speit-ascendai
+#   jupyter/base, jupyter/speit-ai
 #   agent/base, agent/openclaw, agent/hermes
 #
 # It then runs `docker buildx imagetools create` to create a new tag aliasing
@@ -58,7 +58,7 @@ esac
 
 supports_ascend() {
     case "$BRANCH" in
-        featured/base|featured/speit-ai|jupyter/base|jupyter/speit-ai|jupyter/speit-ascendai)
+        featured/base|featured/speit-ai|jupyter/base|jupyter/speit-ai)
             return 0
             ;;
         *)

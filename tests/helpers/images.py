@@ -42,7 +42,6 @@ LINEUP_BRANCHES: dict[str, list[str]] = {
         "featured/speit-ai",
         "jupyter/base",
         "jupyter/speit-ai",
-        "jupyter/speit-ascendai",
     ],
 }
 
@@ -59,7 +58,6 @@ BRANCH_REPO: dict[str, str] = {
     "coder/conda":            "idekube-container-coder",
     "jupyter/base":           "idekube-container-jupyter-base",
     "jupyter/speit-ai":       "idekube-container-jupyter",
-    "jupyter/speit-ascendai": "idekube-container-jupyter",
     "agent/base":             "idekube-container-agent-base",
     "agent/openclaw":         "idekube-container-agent",
     "agent/hermes":           "idekube-container-agent",
@@ -77,7 +75,6 @@ BRANCH_DEPENDS_ON: dict[str, str | None] = {
     "coder/conda":            "coder/base",
     "jupyter/base":           None,
     "jupyter/speit-ai":       "jupyter/base",
-    "jupyter/speit-ascendai": "jupyter/base",
     "agent/base":             None,
     "agent/openclaw":         "agent/base",
     "agent/hermes":           "agent/base",
