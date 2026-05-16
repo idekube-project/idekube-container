@@ -29,13 +29,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          release_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${OPENCLAW_REPO}/releases/latest")"
-
-          image_version="$(jq -r '.tag_name' <<<"$release_json")"
-          if [[ -z "$image_version" || "$image_version" == "null" ]]; then
-            echo "Unable to resolve OpenClaw release tag from ${OPENCLAW_REPO}." >&2
+          # image_version tracks the idekube-container meta-repo's latest git tag,
+          # matching the convention used by publish-production.yml. Upstream OpenClaw
+          # release tags are date-based and would otherwise duplicate openclaw_version.
+          image_version="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          if [[ -z "$image_version" ]]; then
+            echo "Unable to resolve idekube-container git tag. Create a git tag first." >&2
             exit 1
           fi
+
+          release_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${OPENCLAW_REPO}/releases/latest")"
 
           release_name="$(jq -r '.name // empty' <<<"$release_json")"
           release_tag="$(jq -r '.tag_name // empty' <<<"$release_json")"
