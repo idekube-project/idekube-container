@@ -12,6 +12,7 @@
     --border: #e2e8f0;
     --shadow: rgba(0, 0, 0, 0.08);
     --shadow-hover: rgba(0, 0, 0, 0.12);
+    --danger: #d9534f;
 }
 
 [data-theme="dark"] {
@@ -28,4 +29,5 @@
     --border: #334155;
     --shadow: rgba(0, 0, 0, 0.3);
     --shadow-hover: rgba(0, 0, 0, 0.5);
+    --danger: #f87171;
 }
