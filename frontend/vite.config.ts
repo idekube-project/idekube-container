@@ -3,7 +3,13 @@ import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 import type { Plugin } from 'vite'
 
-function mockHealth(): Plugin {
+// Dev-only /health mock. Enabled by default so `npm run dev` shows the
+// SSH/coder/jupyter cards without a backend. Opt out to exercise the real
+// probe path (failure → "no services") with:
+//   MOCK_HEALTH=0 npm run dev      (or "off" / "false")
+function mockHealth(): Plugin | false {
+  const flag = (process.env.MOCK_HEALTH ?? '').toLowerCase()
+  if (flag === '0' || flag === 'off' || flag === 'false') return false
   return {
     name: 'mock-health',
     apply: 'serve',
@@ -28,7 +34,7 @@ function mockHealth(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [vue(), mockHealth()],
+  plugins: [vue(), mockHealth()].filter(Boolean) as Plugin[],
   build: {
     rollupOptions: {
       input: {
