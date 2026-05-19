@@ -4,6 +4,15 @@
     <img src="assets/screenshot-0.jpg" alt="Screenshot" style="width: 100%; max-width: 100%; height: auto;">
 </div>
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![publish-staging](https://github.com/idekube-project/idekube-container/actions/workflows/publish.yml/badge.svg?branch=main)](https://github.com/idekube-project/idekube-container/actions/workflows/publish.yml)
+[![publish-production](https://github.com/idekube-project/idekube-container/actions/workflows/publish-production.yml/badge.svg)](https://github.com/idekube-project/idekube-container/actions/workflows/publish-production.yml)
+[![GitHub release](https://img.shields.io/github/v/release/idekube-project/idekube-container?display_name=tag&sort=semver)](https://github.com/idekube-project/idekube-container/releases)
+[![GHCR](https://img.shields.io/badge/registry-ghcr.io-2188ff?logo=github)](https://github.com/orgs/idekube-project/packages?repo_name=idekube-container)
+[![Submodules](https://img.shields.io/badge/dependencies-git%20submodules-f05032?logo=git&logoColor=white)](.gitmodules)
+
+> **Note on the "gherkin badge":** the test suite is pytest + Playwright, not a Gherkin/BDD framework (Cucumber, behave, pytest-bdd, etc.), so a Gherkin-feature-count or Cucumber-report badge is not applicable.
+
 The IDEKUBE project provides IDE containers for development work within Kubernetes clusters. This is a continuously updated collection of containers used in robotics, simulations, machine learning, and education (Shanghai Jiao Tong University Paris Elite Institute of Technology - SPEIT).
 
 This is the **meta-repository** that owns the centralized build system. Image repos under `images/` remain independently versioned submodules but are driven from this repo's `docker-bake.hcl`.
@@ -242,6 +251,14 @@ Every container exposes `/health` (no auth) returning JSON for Kubernetes probes
 
 - For Kubernetes with Nginx Ingress Controller, the `nginx.org/websocket-services` annotation is required for the coder service.
 - Chromium sandboxing and FUSE are not available in rootless mode. Use `privileged: true` to enable them.
+
+## License
+
+This project is licensed under the terms of the [MIT License](LICENSE). See the `LICENSE` file at the root of this repository for the full text.
+
+The MIT License applies to the source code in this meta-repository, including the build configuration (`docker-bake.hcl` and overrides), helper scripts, test suite, CI workflows, and documentation. Submodules referenced under `images/`, `artifacts/`, `frontend/`, and `healthcheck/` are governed by the license declared in each respective repository.
+
+Container images published by this project bundle third-party software distributed under its own license. Redistribution and use of the built images must comply with the terms of each bundled component, including but not limited to the operating system base image and the upstream projects acknowledged below.
 
 ## Acknowledgement
 
