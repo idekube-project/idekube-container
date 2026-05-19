@@ -20,8 +20,19 @@ body {
     color: var(--text-primary);
 }
 
+#app {
+    width: 100%;
+}
+
 @media (max-width: 480px) {
     body {
         padding: 16px;
     }
+}
+
+/* Widen the landing container while a service card is expanded (e.g. SSH copy
+   reveals the ProxyCommand snippet). Higher specificity than the scoped
+   `.container[data-v-*]` rule in App.vue so it overrides the 800px max-width. */
+body:has(.service-card--expanded) .container {
+    max-width: min(1100px, calc(100vw - 64px));
 }

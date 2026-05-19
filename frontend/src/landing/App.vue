@@ -1,5 +1,5 @@
 <template>
-    <div>
+    <div class="page">
     <ControlButtons />
 
     <div class="container">
@@ -27,6 +27,13 @@ const { lang } = useLanguage()
 </script>
 
 <style scoped>
+.page {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
 .container {
     background: var(--bg-card);
     backdrop-filter: blur(10px);
@@ -36,7 +43,7 @@ const { lang } = useLanguage()
     padding: 64px;
     max-width: 800px;
     width: 100%;
-    transition: all 0.3s ease;
+    transition: max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s ease;
 }
 
 .logo-section {

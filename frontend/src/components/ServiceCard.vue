@@ -39,6 +39,7 @@
                 readonly
                 rows="3"
                 spellcheck="false"
+                wrap="soft"
                 @click.stop="selectTextarea"
                 @focus="selectTextarea"
             ></textarea>
@@ -248,9 +249,12 @@ async function copyToClipboard(text: string): Promise<void> {
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 10px 12px;
-    resize: vertical;
-    white-space: pre;
-    overflow: auto;
+    resize: none;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    field-sizing: content;
+    min-height: calc(3 * 1.45em + 20px);
+    overflow: hidden;
     cursor: text;
 }
 

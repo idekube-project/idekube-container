@@ -137,8 +137,9 @@ export function useServiceDetection() {
   }
 
   async function detectServices() {
-    loading.value = true
-    // Try /health endpoint first; fall back to parallel individual probes
+    // Only the initial `ref(true)` state should ever render the loading view —
+    // subsequent re-probes update `detectedPaths` in place so cards don't
+    // unmount/remount on every refresh (which caused a visible flicker).
     const ok = await detectViaHealth()
     if (!ok) {
       await detectViaProbes()
