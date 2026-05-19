@@ -23,6 +23,7 @@ ARG TZ=Asia/Shanghai \
     TINI_VERSION=0.19.0 \
     WEBSOCAT_VERSION=1.13.0 \
     TTYD_VERSION=1.7.7 \
+    DUFS_VERSION=0.46.0 \
     NODE_MAJOR=22 \
     OPENCODE_VERSION=latest \
     CLAUDE_CODE_VERSION=latest
@@ -53,6 +54,10 @@ RUN --mount=type=bind,from=artifacts,source=install-scripts/setup-websocat-ssh.s
 # Setup ttyd (web terminal)
 RUN --mount=type=bind,source=docker/base/install-scripts/setup-ttyd.sh,target=/tmp/setup-ttyd.sh \
     export TTYD_VERSION=${TTYD_VERSION}; bash /tmp/setup-ttyd.sh
+
+# Setup dufs (web file upload/download)
+RUN --mount=type=bind,source=docker/base/install-scripts/setup-dufs.sh,target=/tmp/setup-dufs.sh \
+    export DUFS_VERSION=${DUFS_VERSION}; bash /tmp/setup-dufs.sh
 
 # Create the IDEKube user (must come before openclaw, which su's into it)
 RUN --mount=type=bind,from=artifacts,source=install-scripts/setup-user.sh,target=/tmp/setup-user.sh \
