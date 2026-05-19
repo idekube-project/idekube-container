@@ -56,7 +56,7 @@ RUN --mount=type=bind,source=docker/base/install-scripts/setup-ttyd.sh,target=/t
     export TTYD_VERSION=${TTYD_VERSION}; bash /tmp/setup-ttyd.sh
 
 # Setup dufs (web file upload/download)
-RUN --mount=type=bind,source=docker/base/install-scripts/setup-dufs.sh,target=/tmp/setup-dufs.sh \
+RUN --mount=type=bind,from=artifacts,source=install-scripts/setup-dufs.sh,target=/tmp/setup-dufs.sh \
     export DUFS_VERSION=${DUFS_VERSION}; bash /tmp/setup-dufs.sh
 
 # Create the IDEKube user (must come before openclaw, which su's into it)
