@@ -1,10 +1,8 @@
 name: publish-staging
 
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
+  release:
+    types: [prereleased]
   workflow_dispatch:
     inputs:
       lineup:
@@ -41,20 +39,12 @@ jobs:
         if: env.SKIP != '1'
         uses: ./.github/actions/setup-docker-buildx
         with:
-          login: ${{ github.event_name != 'pull_request' }}
+          login: true
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build staging images for PR validation (${{ matrix.lineup }})
-        if: env.SKIP != '1' && github.event_name == 'pull_request'
-        uses: docker/bake-action@v7
-        with:
-          files: docker-bake.hcl,docker-bake.staging.hcl
-          targets: ${{ matrix.lineup }}
-          push: false
-
       - name: Build and push staging images (${{ matrix.lineup }})
-        if: env.SKIP != '1' && github.event_name != 'pull_request'
+        if: env.SKIP != '1'
         uses: docker/bake-action@v7
         with:
           files: docker-bake.hcl,docker-bake.staging.hcl
