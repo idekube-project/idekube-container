@@ -15,6 +15,11 @@ on:
         type: choice
         options: [universal, ascend, both]
         default: both
+      targets:
+        description: "Bake target/group (e.g. agent-base-ascend, agent-base-all, agent). Empty = full lineup. Run 'make discover GROUP=universal' to list targets. Note: tag-stable is skipped when this is set."
+        required: false
+        type: string
+        default: ""
 
 jobs:
   publish:
@@ -74,11 +79,11 @@ jobs:
           VERSION: ${{ steps.vars.outputs.version }}
         with:
           files: docker-bake.hcl,docker-bake.production.hcl
-          targets: ${{ matrix.lineup }}
+          targets: ${{ github.event.inputs.targets || matrix.lineup }}
           push: true
 
       - name: Tag stable
-        if: env.SKIP != '1'
+        if: env.SKIP != '1' && github.event.inputs.targets == ''
         env:
           VERSION: ${{ steps.vars.outputs.version }}
           LINEUP: ${{ matrix.lineup }}
@@ -92,3 +97,9 @@ jobs:
             fi
             ./scripts/tag-stable.sh "$branch" "$VERSION" "$LINEUP"
           done
+
+      - name: Skip tag-stable for scoped build
+        if: env.SKIP != '1' && github.event.inputs.targets != ''
+        run: |
+          echo "Custom targets='${{ github.event.inputs.targets }}' — skipping tag-stable."
+          echo "Run scripts/tag-stable.sh manually if a stable alias is needed."

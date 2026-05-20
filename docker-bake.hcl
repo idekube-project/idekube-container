@@ -370,7 +370,9 @@ group "ascend" {
 }
 
 # Per-flavor convenience groups (handy for local dev: `bake featured`).
-group "featured-base-all" { targets = ["featured-base-universal", "featured-base-ascend"] }
+# Per-branch <slug>-all groups cover both lineups of a matrix-expanded target.
+group "featured-base-all"     { targets = ["featured-base-universal", "featured-base-ascend"] }
+group "featured-speit-ai-all" { targets = ["featured-speit-ai-universal", "featured-speit-ai-ascend"] }
 group "featured" {
   targets = [
     "featured-base-universal",
@@ -382,6 +384,8 @@ group "featured" {
   ]
 }
 group "coder"   { targets = ["coder-base", "coder-conda"] }
+group "jupyter-base-all"     { targets = ["jupyter-base-universal", "jupyter-base-ascend"] }
+group "jupyter-speit-ai-all" { targets = ["jupyter-speit-ai-universal", "jupyter-speit-ai-ascend"] }
 group "jupyter" {
   targets = [
     "jupyter-base-universal",
@@ -390,7 +394,8 @@ group "jupyter" {
     "jupyter-speit-ai-ascend",
   ]
 }
-group "agent-base-all" { targets = ["agent-base-universal", "agent-base-ascend"] }
+group "agent-base-all"     { targets = ["agent-base-universal", "agent-base-ascend"] }
+group "agent-openclaw-all" { targets = ["agent-openclaw-universal", "agent-openclaw-ascend"] }
 group "agent" {
   targets = [
     "agent-base-universal",

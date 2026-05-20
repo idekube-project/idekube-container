@@ -11,6 +11,11 @@ on:
         type: choice
         options: [universal, ascend, both]
         default: both
+      targets:
+        description: "Bake target/group (e.g. agent-base-ascend, agent-base-all, agent). Empty = full lineup. Run 'make discover GROUP=universal' to list targets."
+        required: false
+        type: string
+        default: ""
 
 jobs:
   publish:
@@ -48,5 +53,5 @@ jobs:
         uses: docker/bake-action@v7
         with:
           files: docker-bake.hcl,docker-bake.staging.hcl
-          targets: ${{ matrix.lineup }}
+          targets: ${{ github.event.inputs.targets || matrix.lineup }}
           push: true
