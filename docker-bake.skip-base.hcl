@@ -4,8 +4,13 @@
 #
 #   docker buildx bake -f docker-bake.hcl -f docker-bake.staging.hcl \
 #                      -f docker-bake.skip-base.hcl <target>
+#
+# Env vars:
+#   STABLE_TAG         — universal base tag (default: stable)
+#   STABLE_TAG_ASCEND  — ascend base tag (default: STABLE_TAG-ascend)
 
-variable "STABLE_TAG" { default = "stable" }
+variable "STABLE_TAG"        { default = "stable" }
+variable "STABLE_TAG_ASCEND" { default = "" }
 
 # --- featured derivatives (universal) ---------------------------------------
 
@@ -61,7 +66,7 @@ target "featured-speit-ai-ascend" {
     artifacts         = "artifacts"
     "healthcheck-src" = "healthcheck"
     "frontend-src"    = "frontend"
-    "base-image"      = "docker-image://${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-featured-base:${STABLE_TAG}-ascend"
+    "base-image"      = "docker-image://${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-featured-base:${STABLE_TAG_ASCEND != "" ? STABLE_TAG_ASCEND : "${STABLE_TAG}-ascend"}"
   }
 }
 
@@ -92,7 +97,7 @@ target "jupyter-speit-ai-ascend" {
     artifacts         = "artifacts"
     "healthcheck-src" = "healthcheck"
     "frontend-src"    = "frontend"
-    "base-image"      = "docker-image://${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-jupyter-base:${STABLE_TAG}-ascend"
+    "base-image"      = "docker-image://${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-jupyter-base:${STABLE_TAG_ASCEND != "" ? STABLE_TAG_ASCEND : "${STABLE_TAG}-ascend"}"
   }
 }
 
@@ -112,7 +117,7 @@ target "agent-openclaw-ascend" {
     artifacts         = "artifacts"
     "healthcheck-src" = "healthcheck"
     "frontend-src"    = "frontend"
-    "base-image"      = "docker-image://${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-agent-base:${STABLE_TAG}-ascend"
+    "base-image"      = "docker-image://${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-agent-base:${STABLE_TAG_ASCEND != "" ? STABLE_TAG_ASCEND : "${STABLE_TAG}-ascend"}"
   }
 }
 

@@ -137,12 +137,17 @@ Two workflows under `.github/workflows/`:
 
 ### Workflow dispatch UX
 
-Both publish workflows accept two `workflow_dispatch` inputs:
+Both publish workflows accept these `workflow_dispatch` inputs:
 
 - `lineup` — `universal`, `ascend`, or `both` (default). Used when `targets` is empty.
 - `targets` — bake target or group name. Empty (default) falls back to lineup-driven behavior; non-empty overrides.
+- `skip_base` — boolean (default: false). When true, layers `docker-bake.skip-base.hcl` so derived targets pull a pre-built base image from the registry instead of rebuilding it.
+- `base_tag` — universal base image tag when `skip_base` is enabled (default: `stable`). Examples: `stable`, `v0.8.3`, `edge-staging`.
+- `base_tag_ascend` — ascend base image tag when `skip_base` is enabled. Empty (default) falls back to `<base_tag>-ascend`. Set explicitly when the ascend tag doesn't follow that pattern (e.g. `edge-ascend-staging`).
 
 **Routing rule**: when `targets` is non-empty, exactly **one** runner job runs — the universal leg (the default leg). The job builds whatever the `targets` value resolves to via bake's group expansion. The matrix leg label is just a runner-job slot, not a filter on what bake builds — ascend images can still be produced when the requested group (e.g. `agent-ascend`, `agent-base-all`) contains ascend targets, and they're built via qemu-emulated arm64 on the amd64 runner.
+
+**Skip-base mode**: `docker-bake.skip-base.hcl` replaces every `target:` dependency edge with a `docker-image://` registry pull, so bake skips the base-image build entirely. Useful when only a derived target changed (e.g. `agent-openclaw`) and the base is already published. The override sets `STABLE_TAG` / `STABLE_TAG_ASCEND` bake variables from the `base_tag` / `base_tag_ascend` workflow inputs.
 
 In production, the `tag-stable` step is skipped when `targets` is set; run `scripts/tag-stable.sh` manually if you need a stable alias from a scoped build.
 

@@ -22,10 +22,15 @@ on:
         type: boolean
         default: false
       base_tag:
-        description: "Base image tag to use when skip_base is enabled (e.g. stable, v0.8.3)."
+        description: "Universal base image tag when skip_base is enabled (e.g. stable, v0.8.3, edge-staging)."
         required: false
         type: string
         default: "stable"
+      base_tag_ascend:
+        description: "Ascend base image tag when skip_base is enabled. Empty = base_tag + '-ascend'."
+        required: false
+        type: string
+        default: ""
 
 jobs:
   publish:
@@ -72,6 +77,7 @@ jobs:
         uses: docker/bake-action@v7
         env:
           STABLE_TAG: ${{ github.event.inputs.base_tag || 'stable' }}
+          STABLE_TAG_ASCEND: ${{ github.event.inputs.base_tag_ascend }}
         with:
           files: |
             docker-bake.hcl
