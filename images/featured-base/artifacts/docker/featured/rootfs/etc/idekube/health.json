@@ -5,6 +5,6 @@
   "services": {
     "vnc":   { "port": 6081, "path": "/vnc/",   "probePath": "/" },
     "coder": { "port": 3000, "path": "/coder/",  "probePath": "/" },
-    "ssh":   { "port": 2222, "path": "/ssh" }
+    "ssh":   { "port": 2222, "path": "/ssh", "probeMethod": "tcp" }
   }
 }
