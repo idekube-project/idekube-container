@@ -154,6 +154,26 @@ make tag-stable BRANCH=jupyter/base  VERSION=v1.0.0 LINEUP=ascend
 
 In CI, GitHub releases and manual dispatches trigger the production workflow; PRs and pushes to `main` trigger the staging workflow.
 
+### Scoping a manual dispatch
+
+Both publish workflows take two `workflow_dispatch` inputs:
+
+- `lineup` — `universal`, `ascend`, or `both` (default). Used when `targets` is empty.
+- `targets` — bake target or group name. Empty (default) falls back to `lineup`; non-empty overrides.
+
+When `targets` is set, exactly **one** runner job runs (the universal leg — the default leg) and builds whatever the `targets` value resolves to. The matrix leg label is just the runner slot, not a filter on what's built: a group like `agent-ascend` or `agent-base-all` still produces its ascend images, built via qemu on the amd64 runner.
+
+| Want to build… | Pass `targets` = |
+|---|---|
+| Just one image variant | `agent-base-ascend`, `featured-speit`, … (any single target name) |
+| Both lineups of one variant | `<branch>-all` (e.g. `agent-base-all`) |
+| One flavor × one lineup | `<flavor>-<lineup>` (e.g. `agent-ascend`, `featured-universal`) |
+| Whole flavor across lineups | `featured`, `coder`, `jupyter`, `agent` |
+| Whole lineup | `universal`, `ascend` |
+| Everything | leave `targets` empty + `lineup=both` |
+
+Run `make discover GROUP=universal` (or any other group name) to print the bake plan and confirm a group's contents before dispatching. In production, the `tag-stable` step is skipped when `targets` is set; run `scripts/tag-stable.sh` manually if you need a stable alias from a scoped build.
+
 ### Run a pre-built image
 
 ```yaml
