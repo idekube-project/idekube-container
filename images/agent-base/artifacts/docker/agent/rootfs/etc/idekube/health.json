@@ -5,6 +5,6 @@
   "services": {
     "terminal": { "port": 7681, "path": "/terminal", "probePath": "/" },
     "files":    { "port": 5000, "path": "/files",    "probePath": "/" },
-    "ssh":      { "port": 2222, "path": "/ssh" }
+    "ssh":      { "port": 2222, "path": "/ssh", "probeMethod": "tcp" }
   }
 }
