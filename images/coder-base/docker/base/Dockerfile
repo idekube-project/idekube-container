@@ -5,12 +5,13 @@
 
 ARG BASE_IMAGE=ubuntu:24.04
 
-FROM golang:1.25-alpine AS healthcheck-builder
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS healthcheck-builder
+ARG TARGETOS TARGETARCH
 WORKDIR /build
 COPY --from=healthcheck-src . .
-RUN go mod download && go build -o /idekube-healthcheck .
+RUN go mod download && GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /idekube-healthcheck .
 
-FROM node:22-alpine AS frontend-builder
+FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend-builder
 WORKDIR /src
 COPY --from=frontend-src . .
 RUN npm ci && npm run build
