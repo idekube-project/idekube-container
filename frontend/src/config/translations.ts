@@ -50,6 +50,10 @@ export const landingTranslations: Record<string, LandingTranslations> = {
         name: 'Agent Gateway',
         description: 'openclaw-backed agent API and web UI',
       },
+      files: {
+        name: 'File Manager',
+        description: 'Browse and manage files',
+      },
       terminal: {
         name: 'Web Terminal',
         description: 'Browser-based terminal access',
@@ -82,6 +86,10 @@ export const landingTranslations: Record<string, LandingTranslations> = {
       agent: {
         name: 'Agent \u7F51\u5173',
         description: 'openclaw \u9A71\u52A8\u7684 Agent API \u4E0E Web UI',
+      },
+      files: {
+        name: '\u6587\u4EF6\u7BA1\u7406',
+        description: '\u6D4F\u89C8\u548C\u7BA1\u7406\u6587\u4EF6',
       },
       terminal: {
         name: 'Web \u7EC8\u7AEF',

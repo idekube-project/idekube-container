@@ -55,7 +55,7 @@ export function useServiceDetection() {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS)
     try {
-      const resp = await fetch('/health', { signal: controller.signal })
+      const resp = await fetch('/health', { signal: controller.signal, cache: 'no-store' })
       clearTimeout(timer)
       if (!resp.ok) return false
       const data: HealthResponse = await resp.json()
