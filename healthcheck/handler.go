@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 )
@@ -32,20 +33,40 @@ func healthHandler(c *gin.Context) {
 		Services: make(map[string]ServiceStatus),
 	}
 
+	type result struct {
+		name    string
+		status  ServiceStatus
+		healthy bool
+	}
+
+	results := make([]result, 0, len(cfg.Services))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for name, svc := range cfg.Services {
+		wg.Add(1)
+		go func(name string, svc ServiceConfig) {
+			defer wg.Done()
+			prober := ProberForMethod(svc.ProbeMethod)
+			healthy := prober.Probe(svc)
+			mu.Lock()
+			results = append(results, result{
+				name:    name,
+				status:  ServiceStatus{Port: svc.Port, Path: svc.Path, Healthy: healthy},
+				healthy: healthy,
+			})
+			mu.Unlock()
+		}(name, svc)
+	}
+	wg.Wait()
+
 	allHealthy := true
 	mainHealthy := true
-
-	prober := DefaultProber()
-	for name, svc := range cfg.Services {
-		healthy := prober.Probe(svc)
-		resp.Services[name] = ServiceStatus{
-			Port:    svc.Port,
-			Path:    svc.Path,
-			Healthy: healthy,
-		}
-		if !healthy {
+	for _, r := range results {
+		resp.Services[r.name] = r.status
+		if !r.healthy {
 			allHealthy = false
-			if name == cfg.Main {
+			if r.name == cfg.Main {
 				mainHealthy = false
 			}
 		}
