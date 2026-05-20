@@ -282,28 +282,37 @@ target "jupyter-speit-ai" {
 
 target "agent-base" {
   inherits   = ["_common"]
+  matrix     = { item = LINEUPS }
+  name       = "agent-base-${item.lineup}"
   context    = "images/agent-base"
   dockerfile = "docker/base/Dockerfile"
   args = {
-    BASE_IMAGE  = "ubuntu:24.04"
+    BASE_IMAGE  = item.base
     NAME        = "${NAME_PREFIX}-agent-base"
-    TAG_POSTFIX = ""
+    TAG_POSTFIX = item.postfix
   }
-  tags = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-agent-base:${VERSION}${STAGING_POSTFIX}"]
+  platforms = item.platforms
+  tags      = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-agent-base:${VERSION}${item.postfix}${STAGING_POSTFIX}"]
 }
 
 target "agent-openclaw" {
   inherits   = ["_common"]
+  matrix     = { item = LINEUPS }
+  name       = "agent-openclaw-${item.lineup}"
   context    = "images/agent"
   dockerfile = "docker/openclaw/Dockerfile"
   contexts   = {
     artifacts        = "artifacts"
     "healthcheck-src" = "healthcheck"
     "frontend-src"    = "frontend"
-    "base-image"     = "target:agent-base"
+    "base-image"     = "target:agent-base-${item.lineup}"
   }
-  args = { NAME = "${NAME_PREFIX}-agent", TAG_POSTFIX = "" }
-  tags = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-agent:openclaw-${VERSION}${STAGING_POSTFIX}"]
+  args = {
+    NAME        = "${NAME_PREFIX}-agent"
+    TAG_POSTFIX = item.postfix
+  }
+  platforms = item.platforms
+  tags      = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-agent:openclaw-${VERSION}${item.postfix}${STAGING_POSTFIX}"]
 }
 
 target "agent-hermes" {
@@ -314,7 +323,7 @@ target "agent-hermes" {
     artifacts        = "artifacts"
     "healthcheck-src" = "healthcheck"
     "frontend-src"    = "frontend"
-    "base-image"     = "target:agent-base"
+    "base-image"     = "target:agent-base-universal"
   }
   args = { NAME = "${NAME_PREFIX}-agent", TAG_POSTFIX = "" }
   tags = ["${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-agent:hermes-${VERSION}${STAGING_POSTFIX}"]
@@ -342,8 +351,8 @@ group "universal" {
     "coder-conda",
     "jupyter-base-universal",
     "jupyter-speit-ai-universal",
-    "agent-base",
-    "agent-openclaw",
+    "agent-base-universal",
+    "agent-openclaw-universal",
     "agent-hermes",
   ]
 }
@@ -355,11 +364,15 @@ group "ascend" {
     "featured-speit-ai-ascend",
     "jupyter-base-ascend",
     "jupyter-speit-ai-ascend",
+    "agent-base-ascend",
+    "agent-openclaw-ascend",
   ]
 }
 
 # Per-flavor convenience groups (handy for local dev: `bake featured`).
-group "featured-base-all" { targets = ["featured-base-universal", "featured-base-ascend"] }
+# Per-branch <slug>-all groups cover both lineups of a matrix-expanded target.
+group "featured-base-all"     { targets = ["featured-base-universal", "featured-base-ascend"] }
+group "featured-speit-ai-all" { targets = ["featured-speit-ai-universal", "featured-speit-ai-ascend"] }
 group "featured" {
   targets = [
     "featured-base-universal",
@@ -371,6 +384,8 @@ group "featured" {
   ]
 }
 group "coder"   { targets = ["coder-base", "coder-conda"] }
+group "jupyter-base-all"     { targets = ["jupyter-base-universal", "jupyter-base-ascend"] }
+group "jupyter-speit-ai-all" { targets = ["jupyter-speit-ai-universal", "jupyter-speit-ai-ascend"] }
 group "jupyter" {
   targets = [
     "jupyter-base-universal",
@@ -379,7 +394,17 @@ group "jupyter" {
     "jupyter-speit-ai-ascend",
   ]
 }
-group "agent"   { targets = ["agent-base", "agent-openclaw", "agent-hermes"] }
+group "agent-base-all"     { targets = ["agent-base-universal", "agent-base-ascend"] }
+group "agent-openclaw-all" { targets = ["agent-openclaw-universal", "agent-openclaw-ascend"] }
+group "agent" {
+  targets = [
+    "agent-base-universal",
+    "agent-base-ascend",
+    "agent-openclaw-universal",
+    "agent-openclaw-ascend",
+    "agent-hermes",
+  ]
+}
 
 # Build everything (used in CI for combined-mode runs).
 group "all" {

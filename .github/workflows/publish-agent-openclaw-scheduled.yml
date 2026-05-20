@@ -64,35 +64,49 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Skip when image already exists
-        id: exists
+      - name: Decide which lineups need publishing
+        id: decide
         run: |
           set +e
-          docker buildx imagetools inspect "ghcr.io/idekube-project/idekube-container-agent:openclaw-${{ steps.openclaw.outputs.full_version }}" >/dev/null 2>&1
-          found=$?
+          base="ghcr.io/idekube-project/idekube-container-agent:openclaw-${{ steps.openclaw.outputs.full_version }}"
+          docker buildx imagetools inspect "$base"         >/dev/null 2>&1; universal_found=$?
+          docker buildx imagetools inspect "${base}-ascend" >/dev/null 2>&1; ascend_found=$?
           set -e
-          if [[ "$found" -eq 0 ]]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+
+          targets=()
+          [[ "$universal_found" -ne 0 ]] && targets+=("agent-openclaw-universal")
+          [[ "$ascend_found"    -ne 0 ]] && targets+=("agent-openclaw-ascend")
+
+          joined="$(IFS=,; echo "${targets[*]:-}")"
+          echo "universal_exists=$([[ "$universal_found" -eq 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "ascend_exists=$([[ "$ascend_found" -eq 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "targets=$joined" >> "$GITHUB_OUTPUT"
+
+          if [[ -z "$joined" ]]; then
+            echo "Both lineup tags already exist; nothing to publish."
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Will build: $joined"
           fi
 
       - name: Build and push agent-openclaw
-        if: steps.exists.outputs.exists != 'true'
+        if: steps.decide.outputs.targets != ''
         uses: docker/bake-action@v7
         env:
           VERSION: ${{ steps.openclaw.outputs.full_version }}
           OPENCLAW_VERSION: ${{ steps.openclaw.outputs.openclaw_version }}
         with:
           files: docker-bake.hcl
-          targets: agent-openclaw
+          targets: ${{ steps.decide.outputs.targets }}
           push: true
 
       - name: Summary
         run: |
-          if [[ "${{ steps.exists.outputs.exists }}" == "true" ]]; then
-            echo "Image already exists; nothing to do." >> "$GITHUB_STEP_SUMMARY"
+          base="ghcr.io/idekube-project/idekube-container-agent:openclaw-${{ steps.openclaw.outputs.full_version }}"
+          if [[ -z "${{ steps.decide.outputs.targets }}" ]]; then
+            echo "Both lineup tags already exist; nothing to do." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "Published: ghcr.io/idekube-project/idekube-container-agent:openclaw-${{ steps.openclaw.outputs.full_version }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Published targets: ${{ steps.decide.outputs.targets }}" >> "$GITHUB_STEP_SUMMARY"
+            [[ "${{ steps.decide.outputs.universal_exists }}" == "false" ]] && echo "- $base" >> "$GITHUB_STEP_SUMMARY"
+            [[ "${{ steps.decide.outputs.ascend_exists }}"    == "false" ]] && echo "- ${base}-ascend" >> "$GITHUB_STEP_SUMMARY"
             echo "OPENCLAW_VERSION=${{ steps.openclaw.outputs.openclaw_version }}" >> "$GITHUB_STEP_SUMMARY"
           fi

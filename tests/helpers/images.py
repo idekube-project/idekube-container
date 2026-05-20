@@ -42,6 +42,8 @@ LINEUP_BRANCHES: dict[str, list[str]] = {
         "featured/speit-ai",
         "jupyter/base",
         "jupyter/speit-ai",
+        "agent/base",
+        "agent/openclaw",
     ],
 }
 

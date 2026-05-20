@@ -15,6 +15,11 @@ on:
         type: choice
         options: [universal, ascend, both]
         default: both
+      targets:
+        description: "Bake target/group (e.g. agent-base-ascend, agent-base-all, agent). Empty = full lineup. Run 'make discover GROUP=universal' to list targets. Note: tag-stable is skipped when this is set."
+        required: false
+        type: string
+        default: ""
 
 jobs:
   publish:
@@ -33,10 +38,10 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Skip lineup if dispatch selected the other one
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.lineup != 'both' && github.event.inputs.lineup != matrix.lineup }}
+      - name: Route matrix leg (targets overrides lineup)
+        if: ${{ github.event_name == 'workflow_dispatch' && ( (github.event.inputs.targets != '' && ( (endsWith(github.event.inputs.targets, '-ascend') && matrix.lineup != 'ascend') || (!endsWith(github.event.inputs.targets, '-ascend') && matrix.lineup != 'universal') )) || (github.event.inputs.targets == '' && github.event.inputs.lineup != 'both' && github.event.inputs.lineup != matrix.lineup) ) }}
         run: |
-          echo "Skipping ${{ matrix.lineup }} (dispatch selected ${{ github.event.inputs.lineup }})"
+          echo "Skipping ${{ matrix.lineup }} (targets='${{ github.event.inputs.targets }}', lineup='${{ github.event.inputs.lineup }}')"
           echo "SKIP=1" >> "$GITHUB_ENV"
 
       - name: Setup Docker build environment
@@ -74,11 +79,11 @@ jobs:
           VERSION: ${{ steps.vars.outputs.version }}
         with:
           files: docker-bake.hcl,docker-bake.production.hcl
-          targets: ${{ matrix.lineup }}
+          targets: ${{ github.event.inputs.targets || matrix.lineup }}
           push: true
 
       - name: Tag stable
-        if: env.SKIP != '1'
+        if: env.SKIP != '1' && github.event.inputs.targets == ''
         env:
           VERSION: ${{ steps.vars.outputs.version }}
           LINEUP: ${{ matrix.lineup }}
@@ -87,8 +92,14 @@ jobs:
           # Derived repos do not get stable aliases (they FROM the base stable).
           base_branches="featured/base coder/base jupyter/base agent/base"
           for branch in $base_branches; do
-            if [[ "${{ matrix.lineup }}" == "ascend" ]] && [[ "$branch" != "featured/base" ]] && [[ "$branch" != "jupyter/base" ]]; then
+            if [[ "${{ matrix.lineup }}" == "ascend" ]] && [[ "$branch" != "featured/base" ]] && [[ "$branch" != "jupyter/base" ]] && [[ "$branch" != "agent/base" ]]; then
               continue
             fi
             ./scripts/tag-stable.sh "$branch" "$VERSION" "$LINEUP"
           done
+
+      - name: Skip tag-stable for scoped build
+        if: env.SKIP != '1' && github.event.inputs.targets != ''
+        run: |
+          echo "Custom targets='${{ github.event.inputs.targets }}' — skipping tag-stable."
+          echo "Run scripts/tag-stable.sh manually if a stable alias is needed."
