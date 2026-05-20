@@ -57,6 +57,8 @@ func healthHandler(c *gin.Context) {
 		resp.Status = "degraded"
 	}
 
+	c.Header("Cache-Control", "no-store")
+
 	if !mainHealthy {
 		c.JSON(http.StatusBadGateway, resp)
 		return
