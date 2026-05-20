@@ -9,9 +9,10 @@ import (
 const configPath = "/etc/idekube/health.json"
 
 type ServiceConfig struct {
-	Port      int    `json:"port"`
-	Path      string `json:"path"`
-	ProbePath string `json:"probePath,omitempty"`
+	Port        int    `json:"port"`
+	Path        string `json:"path"`
+	ProbePath   string `json:"probePath,omitempty"`
+	ProbeMethod string `json:"probeMethod,omitempty"`
 }
 
 type HealthConfig struct {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -10,12 +11,10 @@ import (
 
 const probeTimeout = 1 * time.Second
 
-// Prober checks whether a service is healthy.
 type Prober interface {
 	Probe(svc ServiceConfig) bool
 }
 
-// HTTPProber probes a service via an HTTP GET through the nginx reverse proxy on port 80.
 type HTTPProber struct{}
 
 func (p *HTTPProber) Probe(svc ServiceConfig) bool {
@@ -33,8 +32,6 @@ func (p *HTTPProber) Probe(svc ServiceConfig) bool {
 	return resp.StatusCode >= 200 && resp.StatusCode < 400
 }
 
-// WebSocketProber probes a service by attempting a WebSocket handshake
-// through the nginx reverse proxy on port 80.
 type WebSocketProber struct{}
 
 func (p *WebSocketProber) Probe(svc ServiceConfig) bool {
@@ -54,7 +51,18 @@ func (p *WebSocketProber) Probe(svc ServiceConfig) bool {
 	return true
 }
 
-// FallbackProber tries each prober in order, returning true on the first success.
+type TCPProber struct{}
+
+func (p *TCPProber) Probe(svc ServiceConfig) bool {
+	addr := fmt.Sprintf("127.0.0.1:%d", svc.Port)
+	conn, err := net.DialTimeout("tcp", addr, probeTimeout)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
 type FallbackProber struct {
 	Probers []Prober
 }
@@ -68,12 +76,20 @@ func (p *FallbackProber) Probe(svc ServiceConfig) bool {
 	return false
 }
 
-// DefaultProber returns a FallbackProber that tries HTTP first, then WebSocket.
-func DefaultProber() Prober {
-	return &FallbackProber{
-		Probers: []Prober{
-			&HTTPProber{},
-			&WebSocketProber{},
-		},
+func ProberForMethod(method string) Prober {
+	switch method {
+	case "tcp":
+		return &TCPProber{}
+	case "ws", "websocket":
+		return &WebSocketProber{}
+	case "http":
+		return &HTTPProber{}
+	default:
+		return &FallbackProber{
+			Probers: []Prober{
+				&HTTPProber{},
+				&WebSocketProber{},
+			},
+		}
 	}
 }
