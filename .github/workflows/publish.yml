@@ -34,8 +34,17 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      # Matrix-leg routing:
+      #   - targets set      -> run universal leg only (the default leg). The
+      #                         job builds whatever the targets value resolves
+      #                         to inside bake; the leg label is purely the
+      #                         runner-job slot, not a filter on what's built.
+      #                         Ascend images can still be produced when the
+      #                         requested group contains ascend targets (e.g.
+      #                         agent-ascend, agent-base-all).
+      #   - targets empty    -> lineup input controls (both / universal / ascend).
       - name: Route matrix leg (targets overrides lineup)
-        if: ${{ github.event_name == 'workflow_dispatch' && ( (github.event.inputs.targets != '' && ( (endsWith(github.event.inputs.targets, '-ascend') && matrix.lineup != 'ascend') || (!endsWith(github.event.inputs.targets, '-ascend') && matrix.lineup != 'universal') )) || (github.event.inputs.targets == '' && github.event.inputs.lineup != 'both' && github.event.inputs.lineup != matrix.lineup) ) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && ( (github.event.inputs.targets != '' && matrix.lineup != 'universal') || (github.event.inputs.targets == '' && github.event.inputs.lineup != 'both' && github.event.inputs.lineup != matrix.lineup) ) }}
         run: |
           echo "Skipping ${{ matrix.lineup }} (targets='${{ github.event.inputs.targets }}', lineup='${{ github.event.inputs.lineup }}')"
           echo "SKIP=1" >> $GITHUB_ENV

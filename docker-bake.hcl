@@ -331,6 +331,21 @@ target "agent-hermes" {
 
 # ---------------------------------------------------------------------------
 # Groups
+#
+# Taxonomy:
+#   default                  -> universal (what `docker buildx bake` runs)
+#   universal / ascend       -> one full lineup, every flavor
+#   all                      -> universal + ascend
+#   <flavor>                 -> historical per-flavor convenience (some are
+#                               universal-only, some span both — see below)
+#   <branch>-all             -> both lineups of one matrix-expanded branch
+#                               (e.g. agent-base-all = agent-base-{universal,ascend})
+#   <flavor>-<lineup>        -> one flavor × one lineup
+#                               (e.g. agent-ascend = agent-{base,openclaw}-ascend)
+#
+# These compose: `targets=agent-ascend` scopes to the ascend slice of the
+# agent flavor; `targets=agent-base-all` scopes to one branch across both
+# lineups; `targets=agent` covers the entire flavor.
 # ---------------------------------------------------------------------------
 
 # Default group when invoked as `docker buildx bake`. Builds the universal lineup.
@@ -403,6 +418,54 @@ group "agent" {
     "agent-openclaw-universal",
     "agent-openclaw-ascend",
     "agent-hermes",
+  ]
+}
+
+# Per-flavor per-lineup subgroups: <flavor>-<lineup>. Scope one runner job
+# to a single flavor and a single lineup, useful for narrow dispatch like
+# `targets=agent-ascend`. <flavor>-universal aliases the existing universal-
+# only flavor groups (`featured`, `coder`) for naming symmetry; `coder` has
+# no ascend variant so no `coder-ascend` group exists.
+group "featured-universal" {
+  targets = [
+    "featured-base-universal",
+    "featured-speit",
+    "featured-speit-ai-universal",
+    "featured-dind",
+    "featured-kathara",
+    "featured-ros2",
+  ]
+}
+group "featured-ascend" {
+  targets = [
+    "featured-base-ascend",
+    "featured-speit-ai-ascend",
+  ]
+}
+group "coder-universal" { targets = ["coder-base", "coder-conda"] }
+group "jupyter-universal" {
+  targets = [
+    "jupyter-base-universal",
+    "jupyter-speit-ai-universal",
+  ]
+}
+group "jupyter-ascend" {
+  targets = [
+    "jupyter-base-ascend",
+    "jupyter-speit-ai-ascend",
+  ]
+}
+group "agent-universal" {
+  targets = [
+    "agent-base-universal",
+    "agent-openclaw-universal",
+    "agent-hermes",
+  ]
+}
+group "agent-ascend" {
+  targets = [
+    "agent-base-ascend",
+    "agent-openclaw-ascend",
   ]
 }
 

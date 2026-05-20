@@ -119,10 +119,32 @@ Tag templates: base repos use `<VERSION>[-ascend][-staging]`; application repos 
 Two workflows under `.github/workflows/`:
 
 - **Triggers**: `publish.yml` runs staging builds for PRs, `main` branch pushes, and manual dispatch; `publish-production.yml` runs production builds for GitHub releases and manual dispatch.
-- **Matrix**: `lineup: [universal, ascend]` runs in parallel.
+- **Matrix**: `lineup: [universal, ascend]` — two runner-job slots.
 - **Auth**: `GITHUB_TOKEN` → GHCR.
-- **Action**: `docker/bake-action@v7` with `targets: <lineup>`, `files: docker-bake.hcl,<override>`, `push: true`. Bake's BuildKit solver schedules dependency targets first within a lineup.
+- **Action**: `docker/bake-action@v7` with `files: docker-bake.hcl,<override>`, `push: true`. Bake's BuildKit solver schedules dependency targets first.
 - **Stable retag**: production runs `scripts/tag-stable.sh` for each `*-base` branch after push.
+
+### Bake group taxonomy
+
+| Group name | Scope |
+|---|---|
+| `default` | Alias for `universal` |
+| `universal`, `ascend` | One full lineup, every flavor |
+| `all` | `universal` + `ascend` |
+| `featured`, `coder`, `jupyter`, `agent` | Historical per-flavor convenience |
+| `<branch>-all` (e.g. `agent-base-all`) | Both lineups of one matrix-expanded branch |
+| `<flavor>-<lineup>` (e.g. `agent-ascend`) | One flavor × one lineup |
+
+### Workflow dispatch UX
+
+Both publish workflows accept two `workflow_dispatch` inputs:
+
+- `lineup` — `universal`, `ascend`, or `both` (default). Used when `targets` is empty.
+- `targets` — bake target or group name. Empty (default) falls back to lineup-driven behavior; non-empty overrides.
+
+**Routing rule**: when `targets` is non-empty, exactly **one** runner job runs — the universal leg (the default leg). The job builds whatever the `targets` value resolves to via bake's group expansion. The matrix leg label is just a runner-job slot, not a filter on what bake builds — ascend images can still be produced when the requested group (e.g. `agent-ascend`, `agent-base-all`) contains ascend targets, and they're built via qemu-emulated arm64 on the amd64 runner.
+
+In production, the `tag-stable` step is skipped when `targets` is set; run `scripts/tag-stable.sh` manually if you need a stable alias from a scoped build.
 
 ## Testing
 
