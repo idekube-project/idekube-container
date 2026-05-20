@@ -20,6 +20,16 @@ on:
         required: false
         type: string
         default: ""
+      skip_base:
+        description: "Skip base-image rebuild — derived targets pull :stable from the registry instead."
+        required: false
+        type: boolean
+        default: false
+      base_tag:
+        description: "Base image tag to use when skip_base is enabled (e.g. stable, v0.8.3)."
+        required: false
+        type: string
+        default: "stable"
 
 jobs:
   publish:
@@ -86,8 +96,12 @@ jobs:
         uses: docker/bake-action@v7
         env:
           VERSION: ${{ steps.vars.outputs.version }}
+          STABLE_TAG: ${{ github.event.inputs.base_tag || 'stable' }}
         with:
-          files: docker-bake.hcl,docker-bake.production.hcl
+          files: |
+            docker-bake.hcl
+            docker-bake.production.hcl
+            ${{ github.event.inputs.skip_base == 'true' && 'docker-bake.skip-base.hcl' || '' }}
           targets: ${{ github.event.inputs.targets || matrix.lineup }}
           push: true
 
