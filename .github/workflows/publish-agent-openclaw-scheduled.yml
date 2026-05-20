@@ -85,7 +85,7 @@ jobs:
           OPENCLAW_VERSION: ${{ steps.openclaw.outputs.openclaw_version }}
         with:
           files: docker-bake.hcl
-          targets: agent-openclaw
+          targets: agent-openclaw-universal
           push: true
 
       - name: Summary

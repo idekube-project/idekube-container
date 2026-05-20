@@ -87,7 +87,7 @@ jobs:
           # Derived repos do not get stable aliases (they FROM the base stable).
           base_branches="featured/base coder/base jupyter/base agent/base"
           for branch in $base_branches; do
-            if [[ "${{ matrix.lineup }}" == "ascend" ]] && [[ "$branch" != "featured/base" ]] && [[ "$branch" != "jupyter/base" ]]; then
+            if [[ "${{ matrix.lineup }}" == "ascend" ]] && [[ "$branch" != "featured/base" ]] && [[ "$branch" != "jupyter/base" ]] && [[ "$branch" != "agent/base" ]]; then
               continue
             fi
             ./scripts/tag-stable.sh "$branch" "$VERSION" "$LINEUP"

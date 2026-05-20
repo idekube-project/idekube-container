@@ -58,7 +58,7 @@ esac
 
 supports_ascend() {
     case "$BRANCH" in
-        featured/base|featured/speit-ai|jupyter/base|jupyter/speit-ai)
+        featured/base|featured/speit-ai|jupyter/base|jupyter/speit-ai|agent/base|agent/openclaw)
             return 0
             ;;
         *)
