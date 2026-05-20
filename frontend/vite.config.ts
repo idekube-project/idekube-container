@@ -10,7 +10,7 @@ import type { Plugin } from 'vite'
 //   2. Either mock /health with a fixed service list (default), or 503 it so
 //      the "no services" empty state can be exercised. Toggle the mock with:
 //        MOCK_HEALTH=0 npm run dev    (or "off" / "false")
-const PROBE_PATHS = ['vnc', 'coder', 'jupyter', 'ssh', 'agent', 'terminal']
+const PROBE_PATHS = ['vnc', 'coder', 'jupyter', 'ssh', 'agent', 'files', 'terminal']
 
 function devHealth(): Plugin {
   const flag = (process.env.MOCK_HEALTH ?? '').toLowerCase()
@@ -35,6 +35,7 @@ function devHealth(): Plugin {
               ssh: { port: 22, path: '/ssh', healthy: true },
               coder: { port: 8080, path: '/coder', healthy: true },
               jupyter: { port: 8888, path: '/jupyter', healthy: true },
+              files: { port: 5000, path: '/files', healthy: true },
             },
           }),
         )
