@@ -10,5 +10,6 @@ export const serviceConfigs: ServiceConfig[] = [
   { path: 'jupyter', icon: '\u{1F4CA}', detectionMethod: 'http' },
   { path: 'ssh', icon: '\u2328\uFE0F', detectionMethod: 'websocket' },
   { path: 'agent', icon: '\u{1F916}', detectionMethod: 'http' },
+  { path: 'files', icon: '\u{1F4C1}', detectionMethod: 'http' },
   { path: 'terminal', icon: '\u{1F5A5}\uFE0F', detectionMethod: 'http' },
 ]
