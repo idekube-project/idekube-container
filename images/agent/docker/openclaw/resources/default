@@ -1,6 +1,7 @@
 server {
     listen 80;
     listen [::]:80;
+    client_max_body_size 0;
 
     set $__idekube_original_uri $uri;
     if ($__idekube_token_arg_ok = 1) {
@@ -51,7 +52,6 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
         add_header Strict-Transport-Security "max-age=15552000; includeSubDomains" always;
-        client_max_body_size 0;
     }
 
     # File upload/download via dufs
@@ -64,7 +64,6 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
         proxy_read_timeout 86400;
-        client_max_body_size 0;
         proxy_request_buffering off;
     }
 
@@ -80,7 +79,6 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
         proxy_read_timeout 86400;
-        client_max_body_size 0;
     }
 
     # SSH via Websocat (excluded from token auth — uses SSH pubkey auth)
@@ -90,7 +88,6 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_read_timeout 86400;
-        client_max_body_size 0;
     }
     location = /ssh/ {
         proxy_pass http://127.0.0.1:2222/;
@@ -98,7 +95,6 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_read_timeout 86400;
-        client_max_body_size 0;
     }
 
     # Health check endpoint (no auth — for k8s probes)
