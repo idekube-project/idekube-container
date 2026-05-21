@@ -72,10 +72,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve staging version
+        id: vars
+        if: env.SKIP != '1'
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          else
+            VERSION="${GITHUB_SHA::7}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version=$VERSION"
+
       - name: Build and push staging images (${{ matrix.lineup }})
         if: env.SKIP != '1'
         uses: docker/bake-action@v7
         env:
+          VERSION: ${{ steps.vars.outputs.version }}
           STABLE_TAG: ${{ github.event.inputs.base_tag || 'stable' }}
           STABLE_TAG_ASCEND: ${{ github.event.inputs.base_tag_ascend }}
         with:
