@@ -12,9 +12,11 @@ COPY --from=healthcheck-src . .
 RUN go mod download && GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /idekube-healthcheck .
 
 FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend-builder
+ARG GIT_TAG=dev
+ARG FRONTEND_HASH=dev
 WORKDIR /src
 COPY --from=frontend-src . .
-RUN npm ci && npm run build
+RUN VITE_APP_VERSION="${GIT_TAG}-${FRONTEND_HASH}" npm ci && npm run build
 
 FROM ${BASE_IMAGE} AS system
 
