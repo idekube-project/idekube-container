@@ -21,6 +21,7 @@ variable "REGISTRY"        { default = "ghcr.io" }
 variable "AUTHOR"          { default = "idekube-project" }
 variable "NAME_PREFIX"     { default = "idekube-container" }
 variable "VERSION"         { default = "latest" }   # CI sets from git tag or short sha
+variable "FRONTEND_HASH"  { default = "dev" }        # CI sets from frontend submodule short sha
 variable "STAGING_POSTFIX" { default = "" }          # "-staging" via docker-bake.staging.hcl
 
 # Build args replacing the old .dockerargs.base file.
@@ -78,6 +79,7 @@ target "_common" {
     REGISTRY               = REGISTRY
     AUTHOR                 = AUTHOR
     GIT_TAG                = VERSION
+    FRONTEND_HASH          = FRONTEND_HASH
     TZ                     = TZ
     APT_MIRROR             = APT_MIRROR
     USE_APT_MIRROR         = USE_APT_MIRROR
