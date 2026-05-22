@@ -12,6 +12,7 @@
 
         <div class="footer">
             <p>{{ landingTranslations[lang].footer }}</p>
+            <p class="version">{{ version }}</p>
         </div>
     </div>
     </div>
@@ -24,6 +25,7 @@ import { useLanguage } from '../composables/useLanguage'
 import { landingTranslations } from '../config/translations'
 
 const { lang } = useLanguage()
+const version = __APP_VERSION__
 </script>
 
 <style scoped>
@@ -73,6 +75,13 @@ const { lang } = useLanguage()
     font-weight: 400;
     padding-top: 24px;
     border-top: 1px solid var(--border);
+}
+
+.version {
+    font-size: 0.75rem;
+    margin-top: 4px;
+    opacity: 0.6;
+    font-family: monospace;
 }
 
 @media (max-width: 768px) {

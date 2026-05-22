@@ -54,6 +54,9 @@ function devHealth(): Plugin {
 
 export default defineConfig({
   plugins: [vue(), devHealth()],
+  define: {
+    __APP_VERSION__: JSON.stringify(process.env.VITE_APP_VERSION || 'dev'),
+  },
   build: {
     rollupOptions: {
       input: {
