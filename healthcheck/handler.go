@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"net/http"
-	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+const healthResponseTimeout = 2 * time.Second
 
 type ServiceStatus struct {
 	Port    int    `json:"port"`
@@ -27,6 +30,15 @@ func healthHandler(c *gin.Context) {
 		return
 	}
 
+	ctx, cancel := context.WithTimeout(c.Request.Context(), healthResponseTimeout)
+	defer cancel()
+
+	resp, status := buildHealthResponse(ctx, cfg)
+	c.Header("Cache-Control", "no-store")
+	c.JSON(status, resp)
+}
+
+func buildHealthResponse(ctx context.Context, cfg *HealthConfig) (HealthResponse, int) {
 	resp := HealthResponse{
 		Branch:   cfg.Branch,
 		Entry:    cfg.Entry,
@@ -39,30 +51,41 @@ func healthHandler(c *gin.Context) {
 		healthy bool
 	}
 
-	results := make([]result, 0, len(cfg.Services))
-	var mu sync.Mutex
-	var wg sync.WaitGroup
+	results := make(map[string]result, len(cfg.Services))
+	resultCh := make(chan result, len(cfg.Services))
 
 	for name, svc := range cfg.Services {
-		wg.Add(1)
 		go func(name string, svc ServiceConfig) {
-			defer wg.Done()
 			prober := ProberForMethod(svc.ProbeMethod)
-			healthy := prober.Probe(svc)
-			mu.Lock()
-			results = append(results, result{
+			healthy := prober.Probe(ctx, svc)
+			resultCh <- result{
 				name:    name,
 				status:  ServiceStatus{Port: svc.Port, Path: svc.Path, Healthy: healthy},
 				healthy: healthy,
-			})
-			mu.Unlock()
+			}
 		}(name, svc)
 	}
-	wg.Wait()
+
+	for remaining := len(cfg.Services); remaining > 0; remaining-- {
+		select {
+		case r := <-resultCh:
+			results[r.name] = r
+		case <-ctx.Done():
+			remaining = 0
+		}
+	}
 
 	allHealthy := true
 	mainHealthy := true
-	for _, r := range results {
+	for name, svc := range cfg.Services {
+		r, ok := results[name]
+		if !ok {
+			r = result{
+				name:    name,
+				status:  ServiceStatus{Port: svc.Port, Path: svc.Path, Healthy: false},
+				healthy: false,
+			}
+		}
 		resp.Services[r.name] = r.status
 		if !r.healthy {
 			allHealthy = false
@@ -78,11 +101,8 @@ func healthHandler(c *gin.Context) {
 		resp.Status = "degraded"
 	}
 
-	c.Header("Cache-Control", "no-store")
-
 	if !mainHealthy {
-		c.JSON(http.StatusBadGateway, resp)
-		return
+		return resp, http.StatusBadGateway
 	}
-	c.JSON(http.StatusOK, resp)
+	return resp, http.StatusOK
 }

@@ -8,7 +8,7 @@ A lightweight Go microservice that aggregates the health status of backend servi
 - HTTP and WebSocket probe support with automatic fallback
 - Configurable per-service probe paths and ports
 - Distinguishes between main and secondary service failures
-- 1-second probe timeout to keep responses fast
+- 2-second request deadline; slow or failed services are reported unhealthy
 - Minimal footprint with no background goroutines -- probes run on demand per request
 
 ## Prerequisites
@@ -121,7 +121,7 @@ The probing system uses a `Prober` interface with a single method:
 
 ```go
 type Prober interface {
-    Probe(svc ServiceConfig) bool
+    Probe(ctx context.Context, svc ServiceConfig) bool
 }
 ```
 
@@ -139,7 +139,7 @@ The default prober (`DefaultProber()`) is a `FallbackProber` that:
 2. If HTTP fails, attempts a WebSocket handshake
 3. If both fail, the service is marked unhealthy
 
-Both probes use a **1-second timeout**.
+Probes share the handler request context and use a **2-second timeout**.
 
 ### Health Aggregation
 
@@ -147,9 +147,10 @@ On each request the handler:
 
 1. Reads the configuration from disk
 2. Probes every configured service using the default prober
-3. If all services are healthy, returns status `"healthy"` with HTTP 200
-4. If only secondary services are unhealthy, returns status `"degraded"` with HTTP 200
-5. If the main service (specified by the `main` config field) is unhealthy, returns status `"degraded"` with HTTP 502
+3. Marks any service that fails or misses the 2-second deadline as unhealthy
+4. If all services are healthy, returns status `"healthy"` with HTTP 200
+5. If only secondary services are unhealthy, returns status `"degraded"` with HTTP 200
+6. If the main service (specified by the `main` config field) is unhealthy, returns status `"degraded"` with HTTP 502
 
 ## Project Structure
 

@@ -38,8 +38,8 @@ go build -o idekube-healthcheck .
   - `TCPProber` - TCP dial to `127.0.0.1:<port>`, healthy if connection succeeds (used for SSH)
   - `FallbackProber` - tries each child prober in order, returns true on first success
 - **ProberForMethod(method)** selects the right prober based on `probeMethod` in health.json: `"http"`, `"ws"`/`"websocket"`, `"tcp"`, or empty (FallbackProber for backward compat).
-- **Concurrent probing**: all services are probed in parallel via goroutines, so total probe time is bounded by the slowest single service, not the sum.
-- **Probe timeout**: 1 second per probe.
+- **Concurrent probing**: all services are probed in parallel via goroutines, and the handler returns within the 2-second request deadline.
+- **Probe timeout**: 2 seconds per probe; services that fail or miss the request deadline are reported unhealthy.
 - **Health aggregation**: config designates a `main` service. If the main service is unhealthy, HTTP 502 is returned. If only secondary services are unhealthy, HTTP 200 with status `"degraded"`. If all healthy, HTTP 200 with status `"healthy"`.
 - **Config is re-read on every request** (no caching).
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -9,22 +10,26 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const probeTimeout = 1 * time.Second
+const probeTimeout = 2 * time.Second
 
 type Prober interface {
-	Probe(svc ServiceConfig) bool
+	Probe(ctx context.Context, svc ServiceConfig) bool
 }
 
 type HTTPProber struct{}
 
-func (p *HTTPProber) Probe(svc ServiceConfig) bool {
+func (p *HTTPProber) Probe(ctx context.Context, svc ServiceConfig) bool {
 	client := &http.Client{Timeout: probeTimeout}
 	probePath := svc.ProbePath
 	if probePath == "" {
 		probePath = "/"
 	}
 	url := fmt.Sprintf("http://127.0.0.1:%d%s", svc.Port, probePath)
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return false
 	}
@@ -34,7 +39,7 @@ func (p *HTTPProber) Probe(svc ServiceConfig) bool {
 
 type WebSocketProber struct{}
 
-func (p *WebSocketProber) Probe(svc ServiceConfig) bool {
+func (p *WebSocketProber) Probe(ctx context.Context, svc ServiceConfig) bool {
 	dialer := websocket.Dialer{
 		HandshakeTimeout: probeTimeout,
 	}
@@ -43,7 +48,7 @@ func (p *WebSocketProber) Probe(svc ServiceConfig) bool {
 		probePath = "/"
 	}
 	url := fmt.Sprintf("ws://127.0.0.1:%d%s", svc.Port, probePath)
-	conn, _, err := dialer.Dial(url, nil)
+	conn, _, err := dialer.DialContext(ctx, url, nil)
 	if err != nil {
 		return false
 	}
@@ -53,9 +58,10 @@ func (p *WebSocketProber) Probe(svc ServiceConfig) bool {
 
 type TCPProber struct{}
 
-func (p *TCPProber) Probe(svc ServiceConfig) bool {
+func (p *TCPProber) Probe(ctx context.Context, svc ServiceConfig) bool {
 	addr := fmt.Sprintf("127.0.0.1:%d", svc.Port)
-	conn, err := net.DialTimeout("tcp", addr, probeTimeout)
+	dialer := net.Dialer{Timeout: probeTimeout}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return false
 	}
@@ -67,9 +73,12 @@ type FallbackProber struct {
 	Probers []Prober
 }
 
-func (p *FallbackProber) Probe(svc ServiceConfig) bool {
+func (p *FallbackProber) Probe(ctx context.Context, svc ServiceConfig) bool {
 	for _, prober := range p.Probers {
-		if prober.Probe(svc) {
+		if ctx.Err() != nil {
+			return false
+		}
+		if prober.Probe(ctx, svc) {
 			return true
 		}
 	}
