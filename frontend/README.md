@@ -91,9 +91,9 @@ Vite builds both entry points via `rollupOptions.input` in `vite.config.ts`. The
 
 The `useServiceDetection` composable handles automatic service discovery:
 
-1. **Primary method**: Fetches `GET /health`, which returns a JSON response containing a map of services and their health status. Healthy services are displayed on the landing page.
+1. **Primary method**: Fetches `GET /health` with a 5-second timeout. The response service map drives the landing page, and unhealthy services are shown as disabled.
 2. **Fallback method**: If `/health` is unavailable, the composable probes each service individually using HTTP `GET` requests or WebSocket connection attempts, depending on the service type.
-3. **Polling**: Detection runs immediately on mount and repeats every 10 seconds.
+3. **Polling**: Detection runs immediately on mount and repeats every 10 seconds until `/health` reports every service healthy.
 
 Each service is defined in `src/config/services.ts` with a path, icon, and detection method (`http` or `websocket`).
 

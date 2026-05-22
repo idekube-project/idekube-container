@@ -1,18 +1,25 @@
 <template>
     <div class="service-card-wrapper">
         <a
-            :href="isCopyAction ? 'javascript:void(0)' : `/${service.path}/`"
-            :target="!isCopyAction && openInNewTab ? '_blank' : undefined"
-            :rel="!isCopyAction && openInNewTab ? 'noopener noreferrer' : undefined"
+            :href="isDisabled || isCopyAction ? 'javascript:void(0)' : `/${service.path}/`"
+            :target="!isDisabled && !isCopyAction && openInNewTab ? '_blank' : undefined"
+            :rel="!isDisabled && !isCopyAction && openInNewTab ? 'noopener noreferrer' : undefined"
             class="service-card"
-            :class="{ 'service-card--expanded': isCopyAction && expanded }"
+            :class="{
+                'service-card--expanded': isCopyAction && expanded,
+                'service-card--disabled': isDisabled,
+            }"
             :id="`service-${service.path}`"
+            :aria-disabled="isDisabled ? 'true' : undefined"
             @click="handleClick"
         >
             <div class="service-icon-wrapper">{{ service.icon }}</div>
             <div class="service-content">
                 <div class="service-name">
-                    <span class="service-status"></span>
+                    <span
+                        class="service-status"
+                        :class="{ 'service-status--disabled': isDisabled }"
+                    ></span>
                     {{ service.name }}
                 </div>
                 <div class="service-description" :style="descriptionStyle">
@@ -22,7 +29,7 @@
             <div class="service-arrow">{{ isCopyAction ? '\u{1F4CB}' : '\u2192' }}</div>
         </a>
         <div
-            v-if="isCopyAction && expanded"
+            v-if="!isDisabled && isCopyAction && expanded"
             class="ssh-fallback"
             :class="{ 'ssh-fallback--error': copyStatus === 'error' }"
             :data-testid="`ssh-fallback-${service.path}`"
@@ -50,6 +57,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
 import type { DetectedService } from '../composables/useServiceDetection'
+import { landingTranslations } from '../config/translations'
 import { useLanguage } from '../composables/useLanguage'
 import { useNewTab } from '../composables/useNewTab'
 
@@ -66,6 +74,7 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 let resetTimer: ReturnType<typeof setTimeout> | null = null
 
 const isCopyAction = computed(() => props.service.action === 'copy-ssh')
+const isDisabled = computed(() => !props.service.healthy)
 
 const sshCommand = computed(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -76,6 +85,9 @@ const sshCommand = computed(() => {
 })
 
 const displayDescription = computed(() => {
+    if (isDisabled.value) {
+        return landingTranslations[lang.value]?.serviceUnavailable ?? 'Service unavailable'
+    }
     if (copyStatus.value === 'success') {
         return lang.value === 'zh' ? '\u5DF2\u590D\u5236 ProxyCommand!' : 'ProxyCommand Copied!'
     }
@@ -99,6 +111,11 @@ const fallbackHint = computed(() => {
 })
 
 function handleClick(e: MouseEvent) {
+    if (isDisabled.value) {
+        e.preventDefault()
+        return
+    }
+
     if (!isCopyAction.value) return
 
     e.preventDefault()
@@ -189,6 +206,11 @@ async function copyToClipboard(text: string): Promise<void> {
     border-bottom-color: transparent;
 }
 
+.service-card--disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+}
+
 .service-card::before {
     content: "";
     position: absolute;
@@ -207,12 +229,22 @@ async function copyToClipboard(text: string): Promise<void> {
     border-color: var(--primary);
 }
 
+.service-card--disabled:hover {
+    transform: none;
+    box-shadow: none;
+    border-color: var(--border);
+}
+
 .service-card--expanded:hover {
     transform: none;
 }
 
 .service-card:hover::before {
     transform: scaleY(1);
+}
+
+.service-card--disabled:hover::before {
+    transform: scaleY(0);
 }
 
 .ssh-fallback {
@@ -287,6 +319,12 @@ async function copyToClipboard(text: string): Promise<void> {
     transform: scale(1.1);
 }
 
+.service-card--disabled .service-icon-wrapper,
+.service-card--disabled:hover .service-icon-wrapper {
+    filter: grayscale(1);
+    transform: none;
+}
+
 .service-content {
     flex: 1;
 }
@@ -308,6 +346,12 @@ async function copyToClipboard(text: string): Promise<void> {
     background: var(--accent);
     border-radius: 50%;
     animation: pulse 2s ease-in-out infinite;
+}
+
+.service-status--disabled {
+    background: var(--danger);
+    animation: none;
+    opacity: 0.8;
 }
 
 @keyframes pulse {
@@ -336,6 +380,11 @@ async function copyToClipboard(text: string): Promise<void> {
 .service-card:hover .service-arrow {
     opacity: 1;
     transform: translateX(4px);
+}
+
+.service-card--disabled:hover .service-arrow {
+    opacity: 0;
+    transform: none;
 }
 
 @media (max-width: 480px) {

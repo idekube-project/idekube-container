@@ -8,6 +8,7 @@ export interface LandingTranslations {
   subtitle: string
   loading: string
   noServices: string
+  serviceUnavailable: string
   footer: string
   services: Record<string, ServiceTranslation>
 }
@@ -27,6 +28,7 @@ export const landingTranslations: Record<string, LandingTranslations> = {
     subtitle: 'Select a service to get started',
     loading: 'Detecting available services',
     noServices: 'No services available',
+    serviceUnavailable: 'Service unavailable',
     footer: 'IDEKube Container Environment',
     services: {
       vnc: {
@@ -64,6 +66,7 @@ export const landingTranslations: Record<string, LandingTranslations> = {
     subtitle: '\u9009\u62E9\u4E00\u4E2A\u670D\u52A1\u5F00\u59CB\u4F7F\u7528',
     loading: '\u6B63\u5728\u68C0\u6D4B\u53EF\u7528\u670D\u52A1',
     noServices: '\u6682\u65E0\u53EF\u7528\u670D\u52A1',
+    serviceUnavailable: '\u670D\u52A1\u6682\u4E0D\u53EF\u7528',
     footer: 'IDEKube \u5BB9\u5668\u73AF\u5883',
     services: {
       vnc: {

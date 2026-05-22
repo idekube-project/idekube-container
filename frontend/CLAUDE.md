@@ -52,7 +52,7 @@ Makefile                # Build automation with stamp-based incremental builds
 ## Architecture
 
 - **Dual SPA**: Two independent Vue apps share components/composables but have separate entry points. Vite builds both via `rollupOptions.input`.
-- **Service detection**: `useServiceDetection` first tries `GET /health` (returns a JSON map of services with health status). On failure, it falls back to parallel HTTP/WebSocket probes against each service path. Polls every 10 seconds.
+- **Service detection**: `useServiceDetection` first tries `GET /health` with a 5-second timeout (returns a JSON map of services with health status). Unhealthy services stay visible as disabled cards. On failure, it falls back to parallel HTTP/WebSocket probes against each service path. Polls every 10 seconds until `/health` reports every service healthy.
 - **Auth flow**: When nginx returns 401, the user is served `401.html`. The token form submits the token as `?idekube-container-access-token=<token>` query parameter. Nginx validates via `auth_request`. On invalid token, the query param persists and `TokenForm` detects it to show an error.
 - **SSH special case**: The SSH service card copies an SSH ProxyCommand (using `websocat`) to the clipboard instead of navigating.
 - **Theming**: CSS custom properties in `variables.css` toggled via `data-theme` attribute on `<html>`. Persisted to localStorage, defaults to system preference.
