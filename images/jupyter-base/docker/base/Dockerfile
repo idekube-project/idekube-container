@@ -16,7 +16,7 @@ ARG GIT_TAG=dev
 ARG FRONTEND_HASH=dev
 WORKDIR /src
 COPY --from=frontend-src . .
-RUN VITE_APP_VERSION="${GIT_TAG}-${FRONTEND_HASH}" npm ci && npm run build
+RUN export VITE_APP_VERSION="${GIT_TAG}-${FRONTEND_HASH}" && npm ci && npm run build
 
 FROM ${BASE_IMAGE} AS system
 
