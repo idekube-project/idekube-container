@@ -93,14 +93,17 @@ jobs:
             exit 1
           fi
 
+          FRONTEND_HASH="$(git -C frontend rev-parse --short HEAD)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Version=$VERSION"
+          echo "frontend_hash=$FRONTEND_HASH" >> "$GITHUB_OUTPUT"
+          echo "Version=$VERSION  Frontend=$FRONTEND_HASH"
 
       - name: Build and push production images (${{ matrix.lineup }})
         if: env.SKIP != '1'
         uses: docker/bake-action@v7
         env:
           VERSION: ${{ steps.vars.outputs.version }}
+          FRONTEND_HASH: ${{ steps.vars.outputs.frontend_hash }}
           STABLE_TAG: ${{ github.event.inputs.base_tag || 'stable' }}
           STABLE_TAG_ASCEND: ${{ github.event.inputs.base_tag_ascend }}
         with:
