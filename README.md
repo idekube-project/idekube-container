@@ -1,8 +1,8 @@
-# idekube-container
+# IDEKUBE — Self-Hosted IDE & AI-Agent Fleet for Kubernetes
 
-<div style="text-align: center;">
-    <img src="assets/screenshot-0.jpg" alt="Screenshot" style="width: 100%; max-width: 100%; height: auto;">
-</div>
+<p align="center">
+    <img src="assets/idekube-self-hosted-ide-fleet-kubernetes.jpg" alt="IDEKUBE self-hosted IDE fleet on Kubernetes — JupyterLab, Coder IDE, and noVNC desktop in one browser tab" width="100%">
+</p>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![publish-staging](https://github.com/idekube-project/idekube-container/actions/workflows/publish.yml/badge.svg?branch=main)](https://github.com/idekube-project/idekube-container/actions/workflows/publish.yml)
@@ -11,11 +11,28 @@
 [![GHCR](https://img.shields.io/badge/registry-ghcr.io-2188ff?logo=github)](https://github.com/orgs/idekube-project/packages?repo_name=idekube-container)
 [![Submodules](https://img.shields.io/badge/dependencies-git%20submodules-f05032?logo=git&logoColor=white)](.gitmodules)
 
-> **Note on the "gherkin badge":** the test suite is pytest + Playwright, not a Gherkin/BDD framework (Cucumber, behave, pytest-bdd, etc.), so a Gherkin-feature-count or Cucumber-report badge is not applicable.
-
-The IDEKUBE project provides IDE containers for development work within Kubernetes clusters. This is a continuously updated collection of containers used in robotics, simulations, machine learning, and education (Shanghai Jiao Tong University Paris Elite Institute of Technology - SPEIT).
+**IDEKUBE** runs a fleet of browser-accessible developer environments — JupyterLab, Coder/VS Code, full Linux desktop (XFCE + noVNC), and AI-agent shells (Claude Code, opencode, Hermes) — on your own Kubernetes cluster. A self-hosted alternative to GitHub Codespaces, Gitpod, and Coder Cloud, built for **small engineering teams and research labs** that need per-user dev environments, shared GPUs/NPUs, and on-prem control. Runs on NVIDIA GPUs and Huawei Ascend NPUs; field-tested at SPEIT (Shanghai Jiao Tong University Paris Elite Institute of Technology).
 
 This is the **meta-repository** that owns the centralized build system. Image repos under `images/` remain independently versioned submodules but are driven from this repo's `docker-bake.hcl`.
+
+## Who it's for
+
+- **Small engineering teams (5–50 devs)** who want Codespaces-style ephemeral dev containers without paying per-seat and without sending source to a SaaS.
+- **Research labs and university courses** that need to give each student or researcher their own JupyterLab, IDE, and Linux desktop on shared GPUs or NPUs.
+- **AI / agent teams** running Claude Code, opencode, or custom agents as a fleet — each agent gets an isolated container with a full developer toolchain.
+- **Robotics & simulation groups** who need ROS 2 Jazzy, Gazebo, MoveIt, and Kathara network labs in a reproducible browser-accessible image.
+
+## Use cases
+
+- Self-hosted GitHub Codespaces / Gitpod / Coder Cloud alternative on your own Kubernetes cluster
+- Shared GPU JupyterLab fleet for an ML research lab
+- Per-student browser desktops for a university course (SPEIT runs the fleet at scale)
+- AI-agent sandboxes: one Claude Code or opencode container per task or per user
+- ROS 2 + Gazebo browser desktops for distributed robotics teams
+- Network-emulation labs (Kathara) with no per-laptop setup
+- Ascend NPU notebooks for teams on Huawei hardware
+
+> **Note on the "gherkin badge":** the test suite is pytest + Playwright, not a Gherkin/BDD framework (Cucumber, behave, pytest-bdd, etc.), so a Gherkin-feature-count or Cucumber-report badge is not applicable.
 
 ## Repository Structure
 
@@ -56,12 +73,12 @@ This is the **meta-repository** that owns the centralized build system. Image re
 
 ## Architecture
 
-### Four flavors
+### Image flavors (JupyterLab, Coder, noVNC desktop, AI agent)
 
-- **`featured/`** — Full desktop with Coder + noVNC (TurboVNC + VirtualGL) + SSH. Variants: `base`, `speit`, `speit-ai`, `dind`, `kathara`, `ros2`
-- **`coder/`** — Coder IDE only + SSH. Variants: `base`, `conda`
-- **`jupyter/`** — JupyterLab only + SSH. Variants: `base`, `speit-ai`
-- **`agent/`** — AI agent toolchain (Claude Code + opencode + document processing) + ttyd web terminal + SSH. Variants: `base`, `openclaw`, `hermes`
+- **`featured/`** — Full Linux desktop in a browser: Coder IDE + noVNC (TurboVNC + VirtualGL) + SSH. Variants: `base`, `speit`, `speit-ai`, `dind`, `kathara`, `ros2`
+- **`coder/`** — Coder / VS Code IDE only + SSH. Variants: `base`, `conda`
+- **`jupyter/`** — JupyterLab notebook server only + SSH. Variants: `base`, `speit-ai`
+- **`agent/`** — AI-agent runtime (Claude Code + opencode + document processing) + ttyd web terminal + SSH. Variants: `base`, `openclaw`, `hermes`
 
 ### Service endpoints
 
@@ -105,7 +122,7 @@ agent/base ──> agent/openclaw
            ──> agent/hermes
 ```
 
-## Quick start
+## Quick start: run an IDEKUBE container in Kubernetes
 
 ### Clone with submodules
 
@@ -199,9 +216,9 @@ volumes:
     driver: local
 ```
 
-## Available image tags
+## Available container images (GHCR)
 
-Pre-built images are published on [GitHub Container Registry](https://github.com/orgs/idekube-project/packages?repo_name=idekube-container).
+Pre-built multi-arch container images are published on [GitHub Container Registry (GHCR)](https://github.com/orgs/idekube-project/packages?repo_name=idekube-container) — pull directly into your Kubernetes cluster.
 
 ### Universal tags (base image: `ubuntu:24.04`)
 
