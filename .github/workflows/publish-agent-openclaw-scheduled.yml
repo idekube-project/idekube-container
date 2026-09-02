@@ -88,14 +88,20 @@ jobs:
             echo "Will build: $joined"
           fi
 
+      # Skip the agent-base rebuild: this job only layers a new OpenClaw
+      # version. Rebuilding agent-base-ascend under QEMU on ubuntu-latest
+      # hits a libc-bin/ldconfig segfault (dpkg exit 139, apt 100).
       - name: Build and push agent-openclaw
         if: steps.decide.outputs.targets != ''
         uses: docker/bake-action@v7
         env:
           VERSION: ${{ steps.openclaw.outputs.full_version }}
           OPENCLAW_VERSION: ${{ steps.openclaw.outputs.openclaw_version }}
+          STABLE_TAG: ${{ steps.openclaw.outputs.image_version }}
         with:
-          files: docker-bake.hcl
+          files: |
+            docker-bake.hcl
+            docker-bake.skip-base.hcl
           targets: ${{ steps.decide.outputs.targets }}
           push: true
 
