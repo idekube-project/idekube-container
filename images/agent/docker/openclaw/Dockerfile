@@ -4,9 +4,13 @@ FROM ${BASE_IMAGE} AS system
 
 ARG OPENCLAW_VERSION=latest
 
-# Install openclaw gateway
+# Install openclaw gateway (also provisions Node 24 at $NVM_DIR/openclaw-node)
 RUN --mount=type=bind,source=docker/openclaw/install-scripts/setup-openclaw.sh,target=/tmp/setup-openclaw.sh \
     export OPENCLAW_VERSION=${OPENCLAW_VERSION}; bash /tmp/setup-openclaw.sh
+ENV PATH=/usr/local/nvm/openclaw-node:$PATH
+
+# Prefer OpenClaw's Node 24 over agent-base Node 22 in login shells.
+COPY docker/openclaw/resources/openclaw-node.sh /etc/profile.d/openclaw-node.sh
 
 # Add openclaw supervisor program
 COPY docker/openclaw/resources/openclaw.conf /etc/supervisor/conf.d/openclaw.conf
