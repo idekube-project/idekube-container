@@ -14,9 +14,16 @@ export NVM_DIR="/usr/local/nvm"
 # stay on PATH via $NVM_DIR/current. Install Node 24 alongside it and
 # expose it through a dedicated symlink used only for OpenClaw.
 nvm install "$OPENCLAW_NODE_MAJOR"
-nvm alias default 22
-nvm use "$OPENCLAW_NODE_MAJOR"
 ln -sfn "$(dirname "$(nvm which "$OPENCLAW_NODE_MAJOR")")" "$NVM_DIR/openclaw-node"
+
+# The official installer sources nvm.sh and runs `nvm use default`.
+# If default stays at 22 it "upgrades" via NodeSource, then fails
+# because this shell is still on nvm's Node 22:
+#   Installed Node.js must be 24.16.0+ ... but this shell is using v22.22.3
+nvm alias default "$OPENCLAW_NODE_MAJOR"
+nvm use "$OPENCLAW_NODE_MAJOR"
+export PATH="$NVM_DIR/openclaw-node:$PATH"
+hash -r 2>/dev/null || true
 
 # Interactive login shells and PAM sessions still prepend $NVM_DIR/current
 # (Node 22). Put Node 24 first so `openclaw` and `#!/usr/bin/env node`
@@ -30,6 +37,11 @@ if [ "${OPENCLAW_VERSION}" = "latest" ]; then
 else
     curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard --version "${OPENCLAW_VERSION}"
 fi
+
+# Restore nvm default to Node 22 so $NVM_DIR/current keeps claude/opencode.
+# Keep this shell on Node 24 for the openclaw calls below.
+nvm alias default 22
+nvm use "$OPENCLAW_NODE_MAJOR"
 
 openclaw --version
 
