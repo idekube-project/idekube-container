@@ -32,7 +32,9 @@ if ! command -v su >/dev/null 2>&1; then
 fi
 
 echo "openclaw-bootstrap: no config at $CONFIG_FILE, running onboard"
-su - "$IDEKUBE_USER" -c "export PATH=/usr/local/nvm/current:\$PATH && \
+# OpenClaw 2026.9.3+ needs Node 24+; agent-base's nvm default is Node 22.
+OPENCLAW_PATH="export PATH=/usr/local/nvm/openclaw-node:\$PATH"
+su - "$IDEKUBE_USER" -c "$OPENCLAW_PATH && \
   openclaw onboard --non-interactive --accept-risk --mode local \
     --auth-choice skip --skip-channels --skip-daemon --skip-health \
     --skip-search --skip-skills --skip-ui --no-install-daemon" \
@@ -43,7 +45,7 @@ su - "$IDEKUBE_USER" -c "export PATH=/usr/local/nvm/current:\$PATH && \
 # WebSocket URL that matches what nginx forwards. Without this, the UI
 # tries to open ws://host/agent but openclaw responds with a 302 to
 # /agent/ — and WebSocket clients cannot follow HTTP redirects.
-su - "$IDEKUBE_USER" -c "export PATH=/usr/local/nvm/current:\$PATH && \
+su - "$IDEKUBE_USER" -c "$OPENCLAW_PATH && \
   openclaw config set gateway.controlUi.basePath '\"/agent\"' --strict-json" \
     2>/dev/null || echo "openclaw-bootstrap: failed to set basePath"
 
@@ -55,7 +57,7 @@ su - "$IDEKUBE_USER" -c "export PATH=/usr/local/nvm/current:\$PATH && \
 # (We do NOT also unset gateway.auth.token here: onboard above just
 # generated a fresh per-volume token, so the build-time concern about
 # static tokens doesn't apply.)
-su - "$IDEKUBE_USER" -c "export PATH=/usr/local/nvm/current:\$PATH && \
+su - "$IDEKUBE_USER" -c "$OPENCLAW_PATH && \
   openclaw config set gateway.controlUi.allowedOrigins '[\"*\"]' --strict-json" \
     2>/dev/null || echo "openclaw-bootstrap: failed to set allowedOrigins"
 
