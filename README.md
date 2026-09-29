@@ -11,7 +11,9 @@
 [![GHCR](https://img.shields.io/badge/registry-ghcr.io-2188ff?logo=github)](https://github.com/orgs/idekube-project/packages?repo_name=idekube-container)
 [![Submodules](https://img.shields.io/badge/dependencies-git%20submodules-f05032?logo=git&logoColor=white)](.gitmodules)
 
-**IDEKUBE** runs a fleet of browser-accessible developer environments — JupyterLab, Coder/VS Code, full Linux desktop (XFCE + noVNC), and AI-agent shells (Claude Code, opencode, Hermes) — on your own Kubernetes cluster. A self-hosted alternative to GitHub Codespaces, Gitpod, and Coder Cloud, built for **small engineering teams and research labs** that need per-user dev environments, shared GPUs/NPUs, and on-prem control. Runs on NVIDIA GPUs and Huawei Ascend NPUs; field-tested at SPEIT (Shanghai Jiao Tong University Paris Elite Institute of Technology).
+**IDEKUBE** runs a fleet of browser-accessible developer environments — JupyterLab, Coder/VS Code, full Linux desktop (XFCE + noVNC), and AI-agent shells (Claude Code, opencode, Hermes) — on your own Kubernetes cluster. A self-hosted alternative to GitHub Codespaces, Gitpod, and Coder Cloud, built for **small engineering teams and research labs** that need per-user dev environments, shared GPUs/NPUs, and on-prem control. 
+
+Runs on NVIDIA GPUs and Huawei Ascend NPUs; field-tested at **Cloud IDE Platform** developed by Shanghai Jiao Tong University Paris Elite Institute of Technology (SPEIT) and the **AI Teaching Practice Platform** developed by the Network & Information Center of Shanghai Jiao Tong University.
 
 This is the **meta-repository** that owns the centralized build system. Image repos under `images/` remain independently versioned submodules but are driven from this repo's `docker-bake.hcl`.
 
