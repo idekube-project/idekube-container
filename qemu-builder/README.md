@@ -61,7 +61,7 @@ docker run <image>
   |
   v
 startup.sh (container entrypoint)
-  |-- Copy UEFI firmware, configs, root.img to working directory
+  |-- Copy UEFI firmware and configs; seed root.img only if absent (or IDEKUBE_VM_RESET_DISK)
   |-- Patch user-data.yaml:
   |     - Disable ssh_pwauth
   |     - Add write_files: /etc/idekube/runtime-env (from IDEKUBE_* env vars)
@@ -79,15 +79,15 @@ startup.sh (container entrypoint)
               v
             Guest VM boots
               |-- cloud-init writes /etc/idekube/runtime-env
+              |-- idekube-authn.service renders nginx token auth (authn.sh),
+              |   then nginx starts (it Requires= the service)
               |-- cloud-init runs vm-init.sh
                     |-- UID remapping (IDEKUBE_USER_UID)
                     |-- Set preferred shell (IDEKUBE_PREFERED_SHELL)
                     |-- Initialize home from /etc/skel
                     |-- Import SSH authorized keys (base64-decoded)
-                    |-- Configure nginx token auth (authn.sh)
                     |-- Disable SSH password authentication
                     |-- Execute /etc/idekube/startup.bash/*.sh hooks
-                    |-- Restart nginx
 ```
 
 ## Build Pipeline
@@ -196,10 +196,13 @@ Additional build args can be supplied in a `.dockerargs` file (KEY=VALUE per lin
 | `IDEKUBE_AUTHORIZED_KEYS` | (unset) | Base64-encoded SSH `authorized_keys` content |
 | `IDEKUBE_PREFERED_SHELL` | `/bin/bash` | Default login shell for the `idekube` user |
 | `IDEKUBE_INIT_HOME` | (unset) | When set, re-initialize home directory from `/etc/skel` |
-| `IDEKUBE_ACCESS_TOKEN` | (unset) | Nginx access token; when unset, all requests are permitted |
+| `IDEKUBE_ACCESS_TOKEN` | (unset) | Nginx access token (letters, digits, `.`, `_`, `-`); when unset, all requests are permitted. An invalid token keeps nginx from starting |
 | `IDEKUBE_SSH_PORT` | `22` | Container port for SSH forwarding |
 | `IDEKUBE_WEB_PORT` | `80` | Container port for HTTP forwarding |
-| `IDEKUBE_MONITOR_PORT` | `23` | Container port for QEMU monitor telnet |
+| `IDEKUBE_VM_RESET_DISK` | (unset) | When set, replace an existing `root.img` in `/var/lib/data` with the image's pristine disk. Otherwise an existing disk is kept |
+| `IDEKUBE_MONITOR_SOCKET` | `./qemu-monitor.sock` | Unix socket for the QEMU monitor (relative to `/var/lib/data`) |
+| `IDEKUBE_MONITOR_PORT` | (unset) | Opt-in telnet monitor, bound to `127.0.0.1` only (replaces the socket) |
+| `IDEKUBE_VM_HOSTFWD_ADDR` | (empty: all interfaces) | Address the SSH/HTTP forwards listen on; the build script uses `127.0.0.1` |
 
 ### Cloud-Init
 
@@ -208,6 +211,9 @@ The build-time `user-data.yaml` creates the `idekube` user with password `idekub
 - Sets `ssh_pwauth: false`
 - Adds a `write_files` entry that writes all `IDEKUBE_*` runtime variables to `/etc/idekube/runtime-env`
 - Adds a `runcmd` entry that executes `/etc/idekube/vm-init.sh`
+- Writes a fresh `instance-id` to `meta-data.yaml`, so cloud-init re-applies these settings on every start even when `/var/lib/data` keeps the disk (SSH host keys are regenerated each start as a result)
+
+nginx access-token auth is rendered by `idekube-authn.service` on every boot, before nginx starts; nginx does not start if the token is invalid.
 
 ## Networking
 
@@ -217,8 +223,8 @@ QEMU uses user-mode (slirp) networking with the following default port forwards:
 |---|---|---|---|
 | SSH | 22 (configurable) | 22 | `IDEKUBE_SSH_PORT` |
 | HTTP | 80 (configurable) | 80 | `IDEKUBE_WEB_PORT` |
-| VNC | 5901 | 5901 | Fixed in run.sh |
-| QEMU Monitor | 23 (configurable) | telnet | `IDEKUBE_MONITOR_PORT` |
+
+VNC (5901) is not forwarded: it has no password, so it only listens inside the guest and is reached through the gateway's `/vnc` route. The QEMU monitor is a unix socket (`IDEKUBE_MONITOR_SOCKET`), never a network port; reach it with `docker exec <container> socat - UNIX-CONNECT:/var/lib/data/qemu-monitor.sock`.
 
 When running the container with Docker, map the container ports to host ports:
 
@@ -324,7 +330,6 @@ docker run -d \
   --name idekube-vm \
   -p 10022:22 \
   -p 8080:80 \
-  -p 5901:5901 \
   -e IDEKUBE_VM_MEMORY=4G \
   -e IDEKUBE_VM_CPU=2 \
   -e IDEKUBE_VM_DISK_SIZE=20G \
