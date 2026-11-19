@@ -158,7 +158,7 @@ if [ -d "$HOME" ]; then
 else
     echo "Warning: Home folder $HOME does not exist"
 fi
-chmod 755 "$HOME" 2>/dev/null || echo "Warning: Failed to set permissions on home folder"
+chmod 750 "$HOME" 2>/dev/null || echo "Warning: Failed to set permissions on home folder"
 
 # ------------------------------------------------------
 # response to IDEKUBE_INIT_HOME
