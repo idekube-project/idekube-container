@@ -1,0 +1,245 @@
+{
+ "group": {
+  "default": {
+   "targets": [
+    "universal"
+   ]
+  },
+  "universal": {
+   "targets": [
+    "featured-base-universal",
+    "featured-speit",
+    "featured-speit-ai-universal",
+    "featured-dind",
+    "featured-kathara",
+    "featured-ros2",
+    "coder-base",
+    "coder-conda",
+    "jupyter-base-universal",
+    "jupyter-speit-ai-universal",
+    "agent-base-universal",
+    "agent-openclaw-universal",
+    "agent-hermes"
+   ]
+  }
+ },
+ "target": {
+  "agent-base-universal": {
+   "context": "images/agent-base",
+   "contexts": {
+    "artifacts": "artifacts",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/base/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-agent-base:ci"
+   ]
+  },
+  "agent-hermes": {
+   "context": "images/agent",
+   "contexts": {
+    "artifacts": "artifacts",
+    "base-image": "target:agent-base-universal",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/hermes/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-agent:hermes-ci"
+   ]
+  },
+  "agent-openclaw-universal": {
+   "context": "images/agent",
+   "contexts": {
+    "artifacts": "artifacts",
+    "base-image": "target:agent-base-universal",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/openclaw/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-agent:openclaw-ci"
+   ]
+  },
+  "coder-base": {
+   "context": "images/coder-base",
+   "contexts": {
+    "artifacts": "artifacts",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/base/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-coder-base:ci"
+   ]
+  },
+  "coder-conda": {
+   "context": "images/coder",
+   "contexts": {
+    "artifacts": "artifacts",
+    "base-image": "target:coder-base",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/conda/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-coder:conda-ci"
+   ]
+  },
+  "featured-base-universal": {
+   "context": "images/featured-base",
+   "contexts": {
+    "artifacts": "artifacts",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/base/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-featured-base:ci"
+   ]
+  },
+  "featured-dind": {
+   "context": "images/featured",
+   "contexts": {
+    "artifacts": "artifacts",
+    "base-image": "target:featured-base-universal",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/dind/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-featured:dind-ci"
+   ]
+  },
+  "featured-kathara": {
+   "context": "images/featured",
+   "contexts": {
+    "artifacts": "artifacts",
+    "base-image": "target:featured-dind",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/kathara/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-featured:kathara-ci"
+   ]
+  },
+  "featured-ros2": {
+   "context": "images/featured",
+   "contexts": {
+    "artifacts": "artifacts",
+    "base-image": "target:featured-base-universal",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/ros2/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-featured:ros2-ci"
+   ]
+  },
+  "featured-speit": {
+   "context": "images/featured",
+   "contexts": {
+    "artifacts": "artifacts",
+    "base-image": "target:featured-base-universal",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/speit/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-featured:speit-ci"
+   ]
+  },
+  "featured-speit-ai-universal": {
+   "context": "images/featured",
+   "contexts": {
+    "artifacts": "artifacts",
+    "base-image": "target:featured-base-universal",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/speit-ai/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-featured:speit-ai-ci"
+   ]
+  },
+  "jupyter-base-universal": {
+   "context": "images/jupyter-base",
+   "contexts": {
+    "artifacts": "artifacts",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/base/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-jupyter-base:ci"
+   ]
+  },
+  "jupyter-speit-ai-universal": {
+   "context": "images/jupyter",
+   "contexts": {
+    "artifacts": "artifacts",
+    "base-image": "target:jupyter-base-universal",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/speit-ai/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-jupyter:speit-ai-ci"
+   ]
+  }
+ }
+}

@@ -161,7 +161,7 @@ test:
 	cd tests && uv run pytest --branch=$(BRANCH) --lineup=$(LINEUP)
 
 test_all:
-	cd tests && uv run pytest --lineup=universal -n $(MAX_PARALLEL)
+	cd tests && uv run pytest --lineup=universal -n $(MAX_PARALLEL) --dist loadgroup
 
 test_all_ascend:
-	cd tests && uv run pytest --lineup=ascend -n $(MAX_PARALLEL)
+	cd tests && uv run pytest --lineup=ascend -n $(MAX_PARALLEL) --dist loadgroup

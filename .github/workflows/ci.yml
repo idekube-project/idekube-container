@@ -1,0 +1,164 @@
+name: ci
+
+# Pull-request gate. `ci-ok` is the only required check: it aggregates the
+# static checks and the build/test of every universal (amd64) image the change
+# can affect (scripts/ci/bakeplan.py affected). Dynamic matrix job names can't
+# be required directly, and a skipped matrix must still report a result.
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Comma-separated universal bake targets to build and test, instead of change detection (e.g. coder-base,agent-hermes)."
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+
+      # Embedded scripts are shellchecked at warning level and up.
+      - name: actionlint
+        run: docker run --rm -e SHELLCHECK_OPTS="-S warning" -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color=false
+
+      # Error level only: the existing scripts predate these checks.
+      # SC2148 (no shebang) is excluded until the sourced profile.d snippets
+      # in the image submodules carry `# shellcheck shell=` directives.
+      - name: shellcheck
+        run: |
+          mapfile -t files < <({ git ls-files '*.sh'; git submodule foreach --quiet 'git ls-files "*.sh" | sed "s|^|$sm_path/|"'; } | sort)
+          echo "${#files[@]} scripts"
+          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 -S error -e SC2148 "${files[@]}"
+
+      - name: hadolint
+        run: |
+          mapfile -t files < <({ git ls-files '*Dockerfile*'; git submodule foreach --quiet 'git ls-files "*Dockerfile*" | sed "s|^|$sm_path/|"'; } | grep -v dockerignore | sort)
+          status=0
+          for f in "${files[@]}"; do
+            echo "::group::$f"
+            docker run --rm -i -v "$PWD/.hadolint.yaml:/cfg.yaml:ro" hadolint/hadolint:v2.15.1 \
+              hadolint --config /cfg.yaml --failure-threshold error - < "$f" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+      - name: bake definitions resolve
+        run: |
+          set -euo pipefail
+          export VERSION=ci
+          for files in "docker-bake.hcl" "docker-bake.hcl docker-bake.staging.hcl" "docker-bake.hcl docker-bake.production.hcl"; do
+            args=(); for f in $files; do args+=(-f "$f"); done
+            docker buildx bake --print "${args[@]}" all > /dev/null
+            echo "ok: $files all"
+          done
+          docker buildx bake --print -f docker-bake.hcl -f docker-bake.staging.hcl -f docker-bake.skip-base.hcl universal-derived ascend-derived > /dev/null
+          echo "ok: skip-base derived groups"
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: tests/uv.lock
+
+      - name: CI script tests
+        run: uv run --project tests pytest scripts/ci/tests -q -p no:cacheprovider
+
+      - name: Test suite collects
+        working-directory: tests
+        run: uv run pytest --collect-only -q -p no:cacheprovider > /dev/null
+
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.affected.outputs.matrix }}
+      count: ${{ steps.affected.outputs.count }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Affected targets
+        id: affected
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          INPUT_TARGETS: ${{ inputs.targets }}
+        run: |
+          if [[ -n "$INPUT_TARGETS" ]]; then
+            ./scripts/ci/bakeplan.py affected --targets "$INPUT_TARGETS"
+          else
+            git diff --name-only "$BASE_SHA"...HEAD | tee changed.txt
+            ./scripts/ci/bakeplan.py affected --changed changed.txt
+          fi
+
+  build-test:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    name: build-test (${{ matrix.branch }})
+    # Pinned: Playwright's --with-deps supports specific Ubuntu releases, and
+    # ubuntu-latest has moved to 26.04.
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      VERSION: ci
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+
+      - uses: ./.github/actions/free-disk-space
+
+      - uses: ./.github/actions/setup-docker-buildx
+        with:
+          login: 'false'
+          qemu: 'false'
+
+      - name: Build ${{ matrix.target }} (linux/amd64)
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          FRONTEND_HASH=$(./scripts/ci/frontend-hash.sh) docker buildx bake -f docker-bake.hcl \
+            --load --set "*.platform=linux/amd64" "$TARGET"
+
+      - name: nginx configuration is valid
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          ref=$(docker buildx bake --print -f docker-bake.hcl "$TARGET" | jq -r --arg t "$TARGET" '.target[$t].tags[0]')
+          docker run --rm --entrypoint nginx "$ref" -t
+
+      - uses: ./.github/actions/run-tests
+        with:
+          branches: ${{ matrix.branch }}
+          version: ci
+          workers: '1'
+          artifact-name: test-output-${{ matrix.target }}
+
+  ci-ok:
+    needs: [static, plan, build-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All checks passed
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          # build-test is "skipped" when nothing image-related changed.
+          if jq -e 'any(.[]; . == "failure" or . == "cancelled")' <<<"$RESULTS" >/dev/null; then
+            exit 1
+          fi

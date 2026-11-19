@@ -1,0 +1,5 @@
+# hadolint runs in CI (ci.yml, static job) with --failure-threshold error.
+ignored:
+  # `SHELL ["conda", "run", "-n", "<env>", "/bin/bash", "-c"]` makes ShellCheck
+  # read "conda" as a relative shebang. False positive for every RUN after it.
+  - SC2239
