@@ -1,0 +1,38 @@
+@import './variables.css';
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg-primary);
+    background-image: radial-gradient(circle at 20% 50%, var(--primary) 0%, transparent 50%), radial-gradient(circle at 80% 80%, var(--accent) 0%, transparent 50%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    transition: background 0.3s ease;
+    color: var(--text-primary);
+}
+
+#app {
+    width: 100%;
+}
+
+@media (max-width: 480px) {
+    body {
+        padding: 16px;
+    }
+}
+
+/* Widen the landing container while a service card is expanded (e.g. SSH copy
+   reveals the ProxyCommand snippet). Higher specificity than the scoped
+   `.container[data-v-*]` rule in App.vue so it overrides the 800px max-width. */
+body:has(.service-card--expanded) .container {
+    max-width: min(1100px, calc(100vw - 64px));
+}
