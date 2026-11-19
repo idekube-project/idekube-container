@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-MINICONDA_VERSION=${MINICONDA_VERSION:-latest}
+: "${MINICONDA_VERSION:?MINICONDA_VERSION is not set (versions are pinned in docker-bake.hcl)}"
 
 # Install Miniconda
 arch=$(uname -m)

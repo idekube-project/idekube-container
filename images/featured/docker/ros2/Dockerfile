@@ -2,7 +2,7 @@
 ARG BASE_IMAGE=base-image
 FROM ${BASE_IMAGE} AS system
 
-ARG ROS_DISTRO=jazzy
+ARG ROS_DISTRO
 
 # Install the ROS2 in this container (Ubuntu 24.04)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -28,4 +28,4 @@ RUN rosdep init && rosdep update
 # Setup environment
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /etc/skel/.bashrc
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.zsh" >> /etc/skel/.zshrc
-ENV ROS_DISTRO=jazzy
+ENV ROS_DISTRO=${ROS_DISTRO}

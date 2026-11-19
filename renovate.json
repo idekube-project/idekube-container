@@ -1,0 +1,137 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard"
+  ],
+  "description": "Upstream versions are pinned in docker-bake.hcl; each pinned variable carries a `# renovate:` comment on the line above it. PRs run the ci.yml gate.",
+  "timezone": "Asia/Shanghai",
+  "labels": [
+    "dependencies"
+  ],
+  "prConcurrentLimit": 6,
+  "enabledManagers": [
+    "github-actions",
+    "dockerfile",
+    "custom.regex"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Version variables in docker-bake.hcl",
+      "managerFilePatterns": [
+        "/^docker-bake\\.hcl$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)(?:\\s+versioning=(?<versioning>\\S+))?(?:\\s+extractVersion=(?<extractVersion>\\S+))?(?:\\s+registryUrl=(?<registryUrl>\\S+))?\\s*\\nvariable\\s+\"[A-Z0-9_]+\"\\s*\\{\\s*default\\s*=\\s*\"(?<currentValue>[^\"]+)\"\\s*\\}"
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "QEMU source version for the VM image pipeline (three places, one PR)",
+      "managerFilePatterns": [
+        "/^qemu-builder/scripts/shell/prepare_qemu_files\\.sh$/",
+        "/^qemu-builder/manifests/qemu/Dockerfile\\.engine$/"
+      ],
+      "matchStrings": [
+        "QEMU_VERSION=\"?(?<currentValue>\\d+\\.\\d+\\.\\d+)\"?"
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "qemu/qemu",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "One weekly PR for CI actions",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "GitHub Actions",
+      "schedule": [
+        "before 9am on monday"
+      ]
+    },
+    {
+      "description": "Fast-moving agent CLIs: one weekly PR",
+      "matchDepNames": [
+        "@anthropic-ai/claude-code",
+        "opencode-ai"
+      ],
+      "groupName": "agent CLIs",
+      "schedule": [
+        "before 9am on monday"
+      ]
+    },
+    {
+      "description": "OpenClaw: a PR as soon as upstream releases (the fast lane publishes images separately)",
+      "matchDepNames": [
+        "openclaw"
+      ],
+      "ignoreUnstable": true
+    },
+    {
+      "description": "Hermes: release tags only, no canaries or stray calendar tags",
+      "matchDepNames": [
+        "NousResearch/hermes-agent"
+      ],
+      "allowedVersions": "/^v\\d+\\.\\d+\\.\\d+$/"
+    },
+    {
+      "description": "QEMU: stable releases only",
+      "matchDepNames": [
+        "qemu/qemu"
+      ],
+      "allowedVersions": "!/-rc/"
+    },
+    {
+      "description": "Named build contexts (artifacts, base-image, ...) and local images are not registry images",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchDepNames": [
+        "artifacts",
+        "base-image",
+        "frontend-src",
+        "healthcheck-src",
+        "idekube-qemu-engine"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Base OS releases (ubuntu 24.04 -> 26.04) are deliberate migrations, not bumps",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchDepNames": [
+        "ubuntu"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Runner images are pinned on purpose (Playwright supports specific Ubuntu releases)",
+      "matchDatasources": [
+        "github-runners"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Build-stage toolchains (golang, node): one weekly PR",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchDepNames": [
+        "golang",
+        "node"
+      ],
+      "groupName": "build-stage toolchains",
+      "schedule": [
+        "before 9am on monday"
+      ]
+    }
+  ]
+}

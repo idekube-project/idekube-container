@@ -23,9 +23,9 @@ FROM ${BASE_IMAGE} AS system
 ARG TZ=Asia/Shanghai \
     APT_MIRROR="mirror.sjtu.edu.cn" \
     USE_APT_MIRROR="true" \
-    TINI_VERSION=0.19.0 \
-    WEBSOCAT_VERSION=1.13.0 \
-    CODER_VERSION=4.7.0
+    TINI_VERSION \
+    WEBSOCAT_VERSION \
+    CODER_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=${TZ}

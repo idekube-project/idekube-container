@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-OPENCLAW_VERSION=${OPENCLAW_VERSION:-latest}
+: "${OPENCLAW_VERSION:?OPENCLAW_VERSION is not set (versions are pinned in docker-bake.hcl)}"
 # OpenClaw 2026.9.3+ requires Node >=24.16.0 <25 or >=26.1.0.
 # See https://docs.openclaw.ai/install/node-compatibility
 OPENCLAW_NODE_MAJOR="${OPENCLAW_NODE_MAJOR:-24}"

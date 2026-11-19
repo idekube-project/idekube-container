@@ -4,8 +4,8 @@ FROM ${BASE_IMAGE} AS system
 
 ARG PIP_MIRROR_URL="https://mirror.sjtu.edu.cn/pypi/web/simple" \
     USE_PIP_MIRROR="true" \
-    IVERILOG_VERSION=latest \
-    DIGITAL_VERSION=latest
+    IVERILOG_VERSION \
+    DIGITAL_VERSION
 
 # Install packages
 RUN apt-get update && apt-get install --fix-missing -y \

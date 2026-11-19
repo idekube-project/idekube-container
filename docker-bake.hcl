@@ -30,28 +30,49 @@ variable "APT_MIRROR"             { default = "mirror.sjtu.edu.cn" }
 variable "USE_APT_MIRROR"         { default = "false" }
 variable "PIP_MIRROR_URL"         { default = "https://mirror.sjtu.edu.cn/pypi/web/simple" }
 variable "USE_PIP_MIRROR"         { default = "false" }
+# renovate: datasource=github-releases depName=krallin/tini extractVersion=^v(?<version>.*)$
 variable "TINI_VERSION"           { default = "0.19.0" }
+# renovate: datasource=github-releases depName=vi/websocat extractVersion=^v(?<version>.*)$
 variable "WEBSOCAT_VERSION"       { default = "1.14.1" }
+# renovate: datasource=github-releases depName=tsl0922/ttyd
 variable "TTYD_VERSION"           { default = "1.7.7" }
+# renovate: datasource=github-releases depName=sigoden/dufs extractVersion=^v(?<version>.*)$
 variable "DUFS_VERSION"           { default = "0.46.0" }
+# manual: py313_<release> naming has no Renovate datasource
 variable "MINICONDA_VERSION"      { default = "py313_25.11.1-1" }
+# renovate: datasource=github-releases depName=coder/code-server extractVersion=^v(?<version>.*)$
 variable "CODER_VERSION"          { default = "4.92.2" }
-variable "VIRTUALGL_VERSION"      { default = "3.1.5-20260814" }  # exact apt version (packagecloud)
-variable "TURBOVNC_VERSION"       { default = "3.3.1-20260820" }  # exact apt version (packagecloud)
+# renovate: datasource=deb depName=virtualgl versioning=deb registryUrl=https://packagecloud.io/dcommander/virtualgl/any?suite=any&components=main&binaryArch=amd64
+variable "VIRTUALGL_VERSION"      { default = "3.1.5-20260814" }
+# renovate: datasource=deb depName=turbovnc versioning=deb registryUrl=https://packagecloud.io/dcommander/turbovnc/any?suite=any&components=main&binaryArch=amd64
+variable "TURBOVNC_VERSION"       { default = "3.3.1-20260820" }
+# manual: openclaw pins its own Node 24 (setup-openclaw.sh)
 variable "NODE_MAJOR"             { default = "22" }
+# renovate: datasource=npm depName=opencode-ai
 variable "OPENCODE_VERSION"       { default = "1.4.3" }
+# renovate: datasource=npm depName=openclaw
 variable "OPENCLAW_VERSION"       { default = "2026.4.26" }
+# renovate: datasource=npm depName=@anthropic-ai/claude-code
 variable "CLAUDE_CODE_VERSION"    { default = "2.1.104" }
-variable "HERMES_VERSION"         { default = "v0.23.2" }  # release tag, not a moving branch
+# renovate: datasource=github-releases depName=NousResearch/hermes-agent
+variable "HERMES_VERSION"         { default = "v0.23.2" }
+# renovate: datasource=github-releases depName=astral-sh/uv
 variable "UV_VERSION"             { default = "0.13.9" }
+# renovate: datasource=github-releases depName=hneemann/Digital versioning=loose extractVersion=^v(?<version>.*)$
 variable "DIGITAL_VERSION"        { default = "0.31" }
+# renovate: datasource=github-tags depName=steveicarus/iverilog versioning=regex:^v(?<major>\d+)_(?<minor>\d+)$
 variable "IVERILOG_VERSION"       { default = "v12_0" }
 variable "DOCKER_CHANNEL"         { default = "stable" }
+# renovate: datasource=github-tags depName=docker/cli extractVersion=^v(?<version>\d+\.\d+\.\d+)$
 variable "DOCKER_VERSION"         { default = "27.2.1" }
+# renovate: datasource=github-releases depName=docker/compose
 variable "DOCKER_COMPOSE_VERSION" { default = "v2.29.2" }
+# renovate: datasource=github-releases depName=docker/buildx
 variable "BUILDX_VERSION"         { default = "v0.16.2" }
 variable "DEBUG"                  { default = "false" }
+# manual: ROS distribution codename
 variable "ROS_DISTRO"             { default = "jazzy" }
+# renovate: datasource=github-tags depName=qemu/qemu extractVersion=^v(?<version>\d+\.\d+\.\d+)$
 variable "QEMU_VERSION"           { default = "10.2.0" }
 
 # Lineup definitions (consumed by matrix-expanded dual-lineup targets).

@@ -21,11 +21,11 @@ RUN export VITE_APP_VERSION="${GIT_TAG}-${FRONTEND_HASH}" && npm ci && npm run b
 FROM ${BASE_IMAGE} AS system
 
 ARG TZ=Asia/Shanghai \
-    WEBSOCAT_VERSION=1.13.0 \
+    WEBSOCAT_VERSION \
     APT_MIRROR="mirror.sjtu.edu.cn" \
     USE_APT_MIRROR="false" \
-    TINI_VERSION=0.19.0 \
-    MINICONDA_VERSION=latest
+    TINI_VERSION \
+    MINICONDA_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=${TZ}

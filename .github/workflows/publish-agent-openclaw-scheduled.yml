@@ -1,131 +1,108 @@
 name: publish-agent-openclaw-scheduled
 
+# OpenClaw fast lane: when upstream publishes a new OpenClaw, rebuild only
+# agent-openclaw (both lineups) from the latest *release* (never from main,
+# whose base images may not be released yet), test it like any candidate,
+# and promote it to openclaw-<release>-<openclaw> only if the tests pass.
+#
+# The release must have been cut with the candidate pipeline (it carries
+# scripts/ci/bakeplan.py); older releases are skipped. Renovate separately
+# bumps OPENCLAW_VERSION in docker-bake.hcl for the next regular release.
+
 on:
   schedule:
     - cron: '0 */12 * * *'
   workflow_dispatch:
 
+concurrency:
+  group: publish-agent-openclaw-scheduled
+  cancel-in-progress: false
+
 jobs:
-  publish-openclaw:
-    concurrency:
-      group: publish-agent-openclaw-scheduled
-      cancel-in-progress: false
+  resolve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      tag: ${{ steps.plan.outputs.tag }}
+      openclaw: ${{ steps.plan.outputs.openclaw }}
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - name: Latest release and OpenClaw version
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag=$(gh api "repos/$REPO/releases/latest" --jq .tag_name)
+          # Anyone who can publish a release controls this string; it ends up
+          # in image tags, so only accept Docker tag characters.
+          if [[ ! "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,100}$ ]]; then
+            echo "::error::release tag '$tag' is not a valid image tag component"; exit 1
+          fi
+          if ! gh api "repos/$REPO/contents/scripts/ci/bakeplan.py?ref=$tag" >/dev/null 2>&1; then
+            echo "::notice::Release $tag predates the candidate pipeline; nothing to do."
+            echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          openclaw=$(npm view openclaw version)
+          if [[ ! "$openclaw" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::unexpected OpenClaw version '$openclaw'"; exit 1
+          fi
+          version="${tag}-${openclaw}"
+          image="ghcr.io/${REPO,,}-agent:openclaw-${version}"
+          build=false
+          for ref in "$image" "${image}-ascend"; do
+            docker buildx imagetools inspect "$ref" >/dev/null 2>&1 || build=true
+          done
+          {
+            echo "build=$build"
+            echo "tag=$tag"
+            echo "openclaw=$openclaw"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+          echo "release $tag, OpenClaw $openclaw -> openclaw-$version (build=$build)" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.build == 'true'
+    uses: ./.github/workflows/_build.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      ref: refs/tags/${{ needs.resolve.outputs.tag }}
+      version: ${{ needs.resolve.outputs.version }}
+      targets: agent-openclaw-all
+      skip_base: true
+      base_tag: ${{ needs.resolve.outputs.tag }}
+      base_tag_ascend: ${{ needs.resolve.outputs.tag }}-ascend
+      openclaw_version: ${{ needs.resolve.outputs.openclaw }}
+      artifact_prefix: openclaw
+
+  promote:
+    needs: [resolve, build]
+    if: needs.build.outputs.tests == 'passed'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    env:
-      OPENCLAW_REPO: openclaw/openclaw
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 0
-
-      - name: Resolve latest OpenClaw release metadata
-        id: openclaw
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          # image_version tracks the idekube-container meta-repo's latest git tag,
-          # matching the convention used by publish-production.yml. Upstream OpenClaw
-          # release tags are date-based and would otherwise duplicate openclaw_version.
-          image_version="$(git describe --tags --abbrev=0 2>/dev/null || true)"
-          if [[ -z "$image_version" ]]; then
-            echo "Unable to resolve idekube-container git tag. Create a git tag first." >&2
-            exit 1
-          fi
-          # Anyone who can push a tag controls this string; it ends up in image
-          # tags and step outputs, so only accept Docker tag characters.
-          if [[ ! "$image_version" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,100}$ ]]; then
-            echo "Git tag '$image_version' is not a valid image tag component." >&2
-            exit 1
-          fi
-
-          release_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${OPENCLAW_REPO}/releases/latest")"
-
-          release_name="$(jq -r '.name // empty' <<<"$release_json")"
-          release_tag="$(jq -r '.tag_name // empty' <<<"$release_json")"
-
-          # Upstream may format release titles differently over time.
-          # Extract the first 20xx.x.x token from name first, then tag.
-          openclaw_version="$(printf '%s\n%s\n' "$release_name" "$release_tag" | grep -Eo '20[0-9]{2}\.[0-9]{1,2}\.[0-9]{1,2}' | head -n1 || true)"
-          if [[ ! "$openclaw_version" =~ ^[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
-            echo "Unable to extract upstream OpenClaw version (20xx.x.x) from release name/tag. name='$release_name' tag='$release_tag'." >&2
-            exit 1
-          fi
-
-          full_version="${image_version}-${openclaw_version}"
-
-          echo "image_version=$image_version" >> "$GITHUB_OUTPUT"
-          echo "openclaw_version=$openclaw_version" >> "$GITHUB_OUTPUT"
-          echo "full_version=$full_version" >> "$GITHUB_OUTPUT"
-
-      - name: Setup Docker build environment
-        uses: ./.github/actions/setup-docker-buildx
+          ref: refs/tags/${{ needs.resolve.outputs.tag }}
+      - uses: ./.github/actions/setup-docker-buildx
         with:
           login: 'true'
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Decide which lineups need publishing
-        id: decide
-        env:
-          FULL_VERSION: ${{ steps.openclaw.outputs.full_version }}
-        run: |
-          set +e
-          base="ghcr.io/idekube-project/idekube-container-agent:openclaw-${FULL_VERSION}"
-          docker buildx imagetools inspect "$base"         >/dev/null 2>&1; universal_found=$?
-          docker buildx imagetools inspect "${base}-ascend" >/dev/null 2>&1; ascend_found=$?
-          set -e
-
-          targets=()
-          [[ "$universal_found" -ne 0 ]] && targets+=("agent-openclaw-universal")
-          [[ "$ascend_found"    -ne 0 ]] && targets+=("agent-openclaw-ascend")
-
-          joined="$(IFS=,; echo "${targets[*]:-}")"
-          echo "universal_exists=$([[ "$universal_found" -eq 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-          echo "ascend_exists=$([[ "$ascend_found" -eq 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-          echo "targets=$joined" >> "$GITHUB_OUTPUT"
-
-          if [[ -z "$joined" ]]; then
-            echo "Both lineup tags already exist; nothing to publish."
-          else
-            echo "Will build: $joined"
-          fi
-
-      # Skip the agent-base rebuild: this job only layers a new OpenClaw
-      # version. Rebuilding agent-base-ascend under QEMU on ubuntu-latest
-      # hits a libc-bin/ldconfig segfault (dpkg exit 139, apt 100).
-      - name: Build and push agent-openclaw
-        if: steps.decide.outputs.targets != ''
-        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
-        env:
-          VERSION: ${{ steps.openclaw.outputs.full_version }}
-          OPENCLAW_VERSION: ${{ steps.openclaw.outputs.openclaw_version }}
-          STABLE_TAG: ${{ steps.openclaw.outputs.image_version }}
+          qemu: 'false'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          files: |
-            docker-bake.hcl
-            docker-bake.skip-base.hcl
-          targets: ${{ steps.decide.outputs.targets }}
-          push: true
-
-      - name: Summary
+          name: openclaw-candidate
+      - name: Promote tested OpenClaw images
         env:
-          FULL_VERSION: ${{ steps.openclaw.outputs.full_version }}
-          OPENCLAW_VERSION: ${{ steps.openclaw.outputs.openclaw_version }}
-          TARGETS: ${{ steps.decide.outputs.targets }}
-          UNIVERSAL_EXISTS: ${{ steps.decide.outputs.universal_exists }}
-          ASCEND_EXISTS: ${{ steps.decide.outputs.ascend_exists }}
-        run: |
-          base="ghcr.io/idekube-project/idekube-container-agent:openclaw-${FULL_VERSION}"
-          if [[ -z "$TARGETS" ]]; then
-            echo "Both lineup tags already exist; nothing to do." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Published targets: ${TARGETS}" >> "$GITHUB_STEP_SUMMARY"
-            [[ "$UNIVERSAL_EXISTS" == "false" ]] && echo "- $base" >> "$GITHUB_STEP_SUMMARY"
-            [[ "$ASCEND_EXISTS"    == "false" ]] && echo "- ${base}-ascend" >> "$GITHUB_STEP_SUMMARY"
-            echo "OPENCLAW_VERSION=${OPENCLAW_VERSION}" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: ./scripts/ci/bakeplan.py promote --candidate candidate.json --version "$VERSION" --expect-sha "$(git rev-parse HEAD)"

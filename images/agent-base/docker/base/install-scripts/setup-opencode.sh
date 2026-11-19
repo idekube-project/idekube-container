@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-OPENCODE_VERSION=${OPENCODE_VERSION:-latest}
+: "${OPENCODE_VERSION:?OPENCODE_VERSION is not set (versions are pinned in docker-bake.hcl)}"
 
 # Load nvm
 export NVM_DIR="/usr/local/nvm"

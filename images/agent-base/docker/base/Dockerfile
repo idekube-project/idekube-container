@@ -23,13 +23,13 @@ FROM ${BASE_IMAGE} AS system
 ARG TZ=Asia/Shanghai \
     APT_MIRROR="mirror.sjtu.edu.cn" \
     USE_APT_MIRROR="true" \
-    TINI_VERSION=0.19.0 \
-    WEBSOCAT_VERSION=1.13.0 \
-    TTYD_VERSION=1.7.7 \
-    DUFS_VERSION=0.46.0 \
-    NODE_MAJOR=22 \
-    OPENCODE_VERSION=latest \
-    CLAUDE_CODE_VERSION=latest
+    TINI_VERSION \
+    WEBSOCAT_VERSION \
+    TTYD_VERSION \
+    DUFS_VERSION \
+    NODE_MAJOR \
+    OPENCODE_VERSION \
+    CLAUDE_CODE_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=${TZ} \

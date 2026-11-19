@@ -2,7 +2,7 @@
 ARG BASE_IMAGE=base-image
 FROM ${BASE_IMAGE} AS system
 
-ARG MINICONDA_VERSION=latest
+ARG MINICONDA_VERSION
 
 # Install Miniconda (the only addition over coder/base)
 RUN --mount=type=bind,from=artifacts,source=install-scripts/setup-miniconda.sh,target=/tmp/setup-miniconda.sh \

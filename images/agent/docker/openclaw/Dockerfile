@@ -2,7 +2,7 @@
 ARG BASE_IMAGE=base-image
 FROM ${BASE_IMAGE} AS system
 
-ARG OPENCLAW_VERSION=latest
+ARG OPENCLAW_VERSION
 
 # Install openclaw gateway (also provisions Node 24 at $NVM_DIR/openclaw-node)
 RUN --mount=type=bind,source=docker/openclaw/install-scripts/setup-openclaw.sh,target=/tmp/setup-openclaw.sh \

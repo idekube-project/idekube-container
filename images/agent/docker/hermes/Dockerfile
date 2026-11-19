@@ -2,8 +2,8 @@
 ARG BASE_IMAGE=base-image
 FROM ${BASE_IMAGE} AS system
 
-ARG HERMES_VERSION=v0.23.2 \
-    UV_VERSION=0.13.9
+ARG HERMES_VERSION \
+    UV_VERSION
 
 # Install Hermes Agent (+ ripgrep, uv); see setup-hermes.sh for the layout
 RUN --mount=type=bind,source=docker/hermes/install-scripts/setup-hermes.sh,target=/tmp/setup-hermes.sh \
