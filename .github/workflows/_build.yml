@@ -1,0 +1,317 @@
+name: build-candidate
+
+# Builds, pushes and tests one release candidate ("-staging" tags). Called by
+# publish.yml (prereleases, dispatch, pushes to main) and by the OpenClaw lane.
+#
+#   plan      resolve targets; one build job per flavor, lineup and platform
+#   build     native runner per platform (no QEMU), pushes by digest, with a
+#             registry cache at <repo>:buildcache-<target>-<arch>
+#   merge     multi-platform manifests on the -staging tags -> candidate.json
+#   test      the test suite per image and platform (universal/amd64 gates)
+#   finalize  tests.status -> candidate.json (artifact <prefix>-candidate)
+#
+# All scripts come from `ref`, the commit being built.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit or tag to build
+        required: true
+        type: string
+      version:
+        description: Image VERSION (tags become <version>[-ascend]-staging)
+        required: true
+        type: string
+      lineups:
+        description: Comma-separated lineups to build when targets is empty
+        required: false
+        type: string
+        default: universal,ascend
+      targets:
+        description: Bake targets/groups instead of whole lineups
+        required: false
+        type: string
+        default: ""
+      skip_base:
+        description: Layer docker-bake.skip-base.hcl (derived targets FROM registry bases)
+        required: false
+        type: boolean
+        default: false
+      base_tag:
+        required: false
+        type: string
+        default: stable
+      base_tag_ascend:
+        required: false
+        type: string
+        default: ""
+      openclaw_version:
+        description: Override OPENCLAW_VERSION (empty = docker-bake.hcl default)
+        required: false
+        type: string
+        default: ""
+      cache_to:
+        description: Write the registry build cache
+        required: false
+        type: boolean
+        default: true
+      artifact_prefix:
+        description: Prefix for this call's artifacts (unique per workflow run)
+        required: false
+        type: string
+        default: staging
+    outputs:
+      tests:
+        description: passed | failed (empty when nothing was built)
+        value: ${{ jobs.finalize.outputs.status }}
+      version:
+        value: ${{ inputs.version }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      targets: ${{ steps.plan.outputs.targets }}
+      sha: ${{ steps.plan.outputs.sha }}
+      frontend_hash: ${{ steps.plan.outputs.frontend_hash }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Resolve targets and build jobs
+        id: plan
+        env:
+          VERSION: ${{ inputs.version }}
+          # Not LINEUPS: bake reads env vars named like its variables.
+          IN_LINEUPS: ${{ inputs.lineups }}
+          INPUT_TARGETS: ${{ inputs.targets }}
+          SKIP_BASE: ${{ inputs.skip_base }}
+          BASE_TAG: ${{ inputs.base_tag }}
+          BASE_TAG_ASCEND: ${{ inputs.base_tag_ascend }}
+          OPENCLAW_VERSION_IN: ${{ inputs.openclaw_version }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "::error::bad VERSION '$VERSION'"; exit 1; }
+          [[ "$IN_LINEUPS" =~ ^(universal|ascend)(,(universal|ascend))*$ ]] || { echo "::error::bad lineups '$IN_LINEUPS'"; exit 1; }
+          if [[ -n "$OPENCLAW_VERSION_IN" && ! "$OPENCLAW_VERSION_IN" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::bad openclaw_version '$OPENCLAW_VERSION_IN'"; exit 1
+          fi
+          # ci-resolve-targets.sh validates the inputs and applies the
+          # targets / skip_base rules per lineup ("targets" -> one pass).
+          legs=universal
+          [[ -z "$INPUT_TARGETS" ]] && legs=${IN_LINEUPS//,/ }
+          names=()
+          for leg in $legs; do
+            out=$(mktemp)
+            MATRIX_LINEUP=$leg BAKE_OVERRIDE=docker-bake.staging.hcl GITHUB_OUTPUT=$out ./scripts/ci-resolve-targets.sh
+            names+=("$(sed -n 's/^targets=//p' "$out")")
+          done
+          targets=$(IFS=,; echo "${names[*]}")
+          args=(--targets "$targets" --version "$VERSION" --staging)
+          [[ "$SKIP_BASE" == true ]] && args+=(--skip-base)
+          ./scripts/ci/bakeplan.py matrix "${args[@]}"
+          {
+            echo "targets=$targets"
+            echo "sha=$(git rev-parse HEAD)"
+            echo "frontend_hash=$(./scripts/ci/frontend-hash.sh)"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    name: build (${{ matrix.id }})
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      VERSION: ${{ inputs.version }}
+      FRONTEND_HASH: ${{ needs.plan.outputs.frontend_hash }}
+      STABLE_TAG: ${{ inputs.base_tag }}
+      STABLE_TAG_ASCEND: ${{ inputs.base_tag_ascend }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+
+      - uses: ./.github/actions/free-disk-space
+
+      - uses: ./.github/actions/setup-docker-buildx
+        with:
+          login: 'true'
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          qemu: 'false'
+
+      - name: Build and push by digest (${{ matrix.platform }})
+        env:
+          TARGETS: ${{ matrix.targets }}
+          PLATFORM: ${{ matrix.platform }}
+          SKIP_BASE: ${{ inputs.skip_base }}
+          CACHE: ${{ inputs.cache_to && 'readwrite' || 'read' }}
+          OPENCLAW_VERSION_IN: ${{ inputs.openclaw_version }}
+        run: |
+          set -euo pipefail
+          files=(-f docker-bake.hcl -f docker-bake.staging.hcl)
+          plan_args=(--targets "$TARGETS" --version "$VERSION" --staging)
+          if [[ "$SKIP_BASE" == true ]]; then
+            files+=(-f docker-bake.skip-base.hcl)
+            plan_args+=(--skip-base)
+          fi
+          # Only override the bake default when asked: an empty env var would
+          # set OPENCLAW_VERSION to "".
+          [[ -n "$OPENCLAW_VERSION_IN" ]] && export OPENCLAW_VERSION="$OPENCLAW_VERSION_IN"
+          ./scripts/ci/bakeplan.py override "${plan_args[@]}" --platform "$PLATFORM" \
+            --output digest --cache "$CACHE" --out "$RUNNER_TEMP/override.json"
+          IFS=, read -ra target_list <<<"$TARGETS"
+          docker buildx bake "${files[@]}" -f "$RUNNER_TEMP/override.json" \
+            --metadata-file "$RUNNER_TEMP/metadata.json" "${target_list[@]}"
+          mkdir -p digests
+          ./scripts/ci/bakeplan.py digests "${plan_args[@]}" --platform "$PLATFORM" \
+            --metadata "$RUNNER_TEMP/metadata.json" --out "digests/${{ matrix.id }}.json"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.artifact_prefix }}-digests-${{ matrix.id }}
+          path: digests/${{ matrix.id }}.json
+          retention-days: 7
+
+  merge:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: ./.github/actions/setup-docker-buildx
+        with:
+          login: 'true'
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          qemu: 'false'
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: ${{ inputs.artifact_prefix }}-digests-*
+          path: digests
+          merge-multiple: true
+
+      - name: Create multi-platform manifests
+        env:
+          VERSION: ${{ inputs.version }}
+          TARGETS: ${{ needs.plan.outputs.targets }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          SKIP_BASE: ${{ inputs.skip_base }}
+          CANDIDATE_SOURCE: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          args=(--targets "$TARGETS" --version "$VERSION" --staging --digests-dir digests --sha "$SHA" --out candidate.json)
+          [[ "$SKIP_BASE" == true ]] && args+=(--skip-base)
+          ./scripts/ci/bakeplan.py merge "${args[@]}"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.artifact_prefix }}-candidate
+          path: candidate.json
+
+  test-plan:
+    needs: merge
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.legs.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.artifact_prefix }}-candidate
+      - name: One test job per image and platform
+        id: legs
+        run: ./scripts/ci/bakeplan.py test-matrix --candidate candidate.json
+
+  # universal/amd64 legs gate promotion. arm64 and ascend legs run on native
+  # arm64 runners and only report (continue-on-error) until they are proven.
+  test:
+    needs: test-plan
+    name: test (${{ matrix.branch }}, ${{ matrix.lineup }}, ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ !matrix.blocking }}
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.test-plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/free-disk-space
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: ./.github/actions/run-tests
+        with:
+          branches: ${{ matrix.branch }}
+          lineup: ${{ matrix.lineup }}
+          version: ${{ inputs.version }}
+          staging-postfix: -staging
+          pull: 'true'
+          workers: '1'
+          artifact-name: ${{ inputs.artifact_prefix }}-test-output-${{ matrix.target }}-${{ matrix.arch }}
+
+  finalize:
+    needs: [merge, test]
+    if: always() && needs.merge.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      status: ${{ steps.outcome.outputs.status }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.artifact_prefix }}-candidate
+      - name: Record test outcome
+        id: outcome
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+          CANDIDATE_SOURCE: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          status=failed
+          [[ "$TEST_RESULT" == success ]] && status=passed
+          ./scripts/ci/bakeplan.py set-tests --candidate candidate.json --status "$status"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Candidate \`$(jq -r .version candidate.json)\`: tests **$status**"
+            echo
+            echo "| target | digest | platforms |"
+            echo "|---|---|---|"
+            jq -r '.images | to_entries[] | "| \(.key) | `\(.value.digest[0:19])` | \(.value.platforms | join(", ")) |"' candidate.json
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.artifact_prefix }}-candidate
+          path: candidate.json
+          overwrite: true

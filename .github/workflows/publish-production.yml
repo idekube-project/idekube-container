@@ -61,6 +61,7 @@ jobs:
           login: true
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+          qemu: 'false'
 
       - name: Resolve version
         id: vars

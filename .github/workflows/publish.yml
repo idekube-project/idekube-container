@@ -1,14 +1,19 @@
 name: publish-staging
 
-# Builds and tests release candidates. Every image is pushed with the "-staging"
-# postfix, the pushed digests are recorded in candidate.json, and the test
-# suite runs against those images (universal/amd64 gates; arm64 and ascend
-# report). For a release (prerelease event, or dispatch with `version`),
-# candidate.json, with the test outcome, is attached to the GitHub release;
-# publish-production.yml promotes exactly those digests, and only if the
-# tests passed.
+# Builds and tests release candidates through _build.yml: native per-platform
+# builds pushed by digest, merged onto the "-staging" tags, then tested
+# (universal/amd64 gates; arm64 and ascend report). The pushed digests and the
+# test outcome are recorded in candidate.json; for a release (prerelease
+# event, or dispatch with `version`) it is attached to the GitHub release,
+# and publish-production.yml promotes exactly those digests if tests passed.
+#
+#   push to main  -> VERSION=edge (edge-staging tags), keeps the cache warm
+#   prerelease    -> VERSION=<release tag>
+#   dispatch      -> VERSION=<version input> (checks that tag out) or short SHA
 
 on:
+  push:
+    branches: [main]
   release:
     types: [prereleased]
   workflow_dispatch:
@@ -45,293 +50,102 @@ on:
         type: string
         default: ""
 
-# One candidate build per release version at a time; SHA-versioned dispatch
-# builds do not share state and may run in parallel.
+# One candidate per release version at a time. Pushes to main share the edge
+# tags, so a newer push cancels an older edge build.
 concurrency:
-  group: publish-staging-${{ github.event.release.tag_name || inputs.version || github.run_id }}
-  cancel-in-progress: false
+  group: publish-staging-${{ github.event.release.tag_name || inputs.version || (github.event_name == 'push' && 'edge') || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
-  publish:
-    name: ${{ matrix.lineup }}
+  setup:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        lineup: [universal, ascend]
+    outputs:
+      ref: ${{ steps.vars.outputs.ref }}
+      version: ${{ steps.vars.outputs.version }}
+      lineups: ${{ steps.vars.outputs.lineups }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          # Empty on release events: the event's tag is checked out.
-          ref: ${{ inputs.version }}
-          submodules: recursive
-          fetch-depth: 0
-
-      # Matrix-leg routing:
-      #   - targets set      -> run universal leg only (the default leg). The
-      #                         job builds whatever the targets value resolves
-      #                         to inside bake; the leg label is purely the
-      #                         runner-job slot, not a filter on what's built.
-      #                         Ascend images can still be produced when the
-      #                         requested group contains ascend targets (e.g.
-      #                         agent-ascend, agent-base-all).
-      #   - targets empty    -> lineup input controls (both / universal / ascend).
-      - name: Route matrix leg (targets overrides lineup)
-        if: ${{ github.event_name == 'workflow_dispatch' && ( (github.event.inputs.targets != '' && matrix.lineup != 'universal') || (github.event.inputs.targets == '' && github.event.inputs.lineup != 'both' && github.event.inputs.lineup != matrix.lineup) ) }}
-        env:
-          LINEUP: ${{ matrix.lineup }}
-          INPUT_TARGETS: ${{ github.event.inputs.targets }}
-          INPUT_LINEUP: ${{ github.event.inputs.lineup }}
-        run: |
-          echo "Skipping ${LINEUP} (targets='${INPUT_TARGETS}', lineup='${INPUT_LINEUP}')"
-          echo "SKIP=1" >> "$GITHUB_ENV"
-
-      - name: Setup Docker build environment
-        if: env.SKIP != '1'
-        uses: ./.github/actions/setup-docker-buildx
-        with:
-          login: true
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Validates the dispatch inputs and picks the bake targets for this leg
-      # (skip_base without targets -> <lineup>-derived; skip_base with targets
-      # that still contain a base image -> error). See the script header.
-      - name: Resolve bake targets
-        id: plan
-        if: env.SKIP != '1'
-        env:
-          MATRIX_LINEUP: ${{ matrix.lineup }}
-          INPUT_TARGETS: ${{ github.event.inputs.targets }}
-          SKIP_BASE: ${{ github.event.inputs.skip_base }}
-          BASE_TAG: ${{ github.event.inputs.base_tag }}
-          BASE_TAG_ASCEND: ${{ github.event.inputs.base_tag_ascend }}
-          BAKE_OVERRIDE: docker-bake.staging.hcl
-        run: ./scripts/ci-resolve-targets.sh
-
-      - name: Resolve staging version
+      - name: Resolve version and ref
         id: vars
-        if: env.SKIP != '1'
         env:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           INPUT_VERSION: ${{ inputs.version }}
+          INPUT_LINEUP: ${{ inputs.lineup }}
+          SHA: ${{ github.sha }}
         run: |
-          if [[ "$EVENT_NAME" == "release" ]]; then
-            VERSION="$RELEASE_TAG"
-          elif [[ -n "$INPUT_VERSION" ]]; then
-            VERSION="$INPUT_VERSION"
-          else
-            VERSION="$(git rev-parse --short=7 HEAD)"
-          fi
-
+          ref=$SHA
+          case "$EVENT_NAME" in
+            release) version=$RELEASE_TAG ;;
+            push)    version=edge ;;
+            *)
+              if [[ -n "$INPUT_VERSION" ]]; then
+                version=$INPUT_VERSION
+                ref=refs/tags/$INPUT_VERSION
+              else
+                version=${SHA::7}
+              fi
+              ;;
+          esac
           # Docker tag grammar; also keeps odd release/tag names out of bake.
-          if [[ ! "$VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
-            echo "::error::VERSION '$VERSION' is not a valid image tag." >&2
+          if [[ ! "$version" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "::error::VERSION '$version' is not a valid image tag." >&2
             exit 1
           fi
-          FRONTEND_HASH="$(./scripts/ci/frontend-hash.sh)"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "frontend_hash=$FRONTEND_HASH" >> "$GITHUB_OUTPUT"
-          echo "Version=$VERSION  Frontend=$FRONTEND_HASH"
+          case "${INPUT_LINEUP:-both}" in
+            both)      lineups=universal,ascend ;;
+            universal) lineups=universal ;;
+            ascend)    lineups=ascend ;;
+            *) echo "::error::bad lineup '$INPUT_LINEUP'"; exit 1 ;;
+          esac
+          {
+            echo "ref=$ref"
+            echo "version=$version"
+            echo "lineups=$lineups"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building $version from $ref ($lineups)" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Build and push staging images (${{ matrix.lineup }})
-        if: env.SKIP != '1'
-        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
-        env:
-          VERSION: ${{ steps.vars.outputs.version }}
-          FRONTEND_HASH: ${{ steps.vars.outputs.frontend_hash }}
-          STABLE_TAG: ${{ github.event.inputs.base_tag || 'stable' }}
-          STABLE_TAG_ASCEND: ${{ github.event.inputs.base_tag_ascend }}
-        with:
-          files: |
-            docker-bake.hcl
-            docker-bake.staging.hcl
-            ${{ github.event.inputs.skip_base == 'true' && 'docker-bake.skip-base.hcl' || '' }}
-          targets: ${{ steps.plan.outputs.targets }}
-          push: true
+  build:
+    needs: setup
+    uses: ./.github/workflows/_build.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      ref: ${{ needs.setup.outputs.ref }}
+      version: ${{ needs.setup.outputs.version }}
+      lineups: ${{ needs.setup.outputs.lineups }}
+      targets: ${{ inputs.targets }}
+      skip_base: ${{ inputs.skip_base == true }}
+      base_tag: ${{ inputs.base_tag || 'stable' }}
+      base_tag_ascend: ${{ inputs.base_tag_ascend }}
+      cache_to: true
+      artifact_prefix: staging
 
-      # Matrix job outputs keep only one leg's values, so each leg hands what
-      # it built to the candidate job as an artifact.
-      - name: Record what this leg built
-        if: env.SKIP != '1'
-        env:
-          LINEUP: ${{ matrix.lineup }}
-          VERSION: ${{ steps.vars.outputs.version }}
-          TARGETS: ${{ steps.plan.outputs.targets }}
-          SKIP_BASE: ${{ github.event.inputs.skip_base == 'true' }}
-        run: |
-          jq -n --arg version "$VERSION" --arg targets "$TARGETS" --arg skip_base "$SKIP_BASE" \
-            --arg sha "$(git rev-parse HEAD)" \
-            '{version: $version, targets: $targets, skip_base: ($skip_base == "true"), sha: $sha}' \
-            > "plan-${LINEUP}.json"
-          cat "plan-${LINEUP}.json"
-
-      - name: Upload leg plan
-        if: env.SKIP != '1'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: plan-${{ matrix.lineup }}
-          path: plan-${{ matrix.lineup }}.json
-          retention-days: 7
-
-  # Runs only when every leg succeeded: a partial build is never a candidate.
-  candidate:
-    needs: publish
+  # Attaches the final candidate.json (with the test outcome) to the release
+  # and fails the run when the gating tests failed.
+  publish-candidate:
+    needs: [setup, build]
+    if: always() && needs.build.outputs.tests != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write   # attach candidate.json to the release
-      packages: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          ref: ${{ inputs.version }}
-
-      - name: Setup Docker build environment
-        uses: ./.github/actions/setup-docker-buildx
-        with:
-          login: true
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: plan-*
-          merge-multiple: true
-
-      - name: Record candidate digests
-        id: candidate
-        env:
-          CANDIDATE_SOURCE: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          version=$(jq -rs 'map(.version) | unique | if length == 1 then .[0] else error("legs disagree on version") end' plan-*.json)
-          sha=$(jq -rs 'map(.sha) | unique | if length == 1 then .[0] else error("legs disagree on commit") end' plan-*.json)
-          skip_base=$(jq -rs 'map(.skip_base) | unique | if length == 1 then .[0] else error("legs disagree on skip_base") end' plan-*.json)
-          targets=$(jq -rs 'map(.targets | split(",")) | add | unique | join(",")' plan-*.json)
-          [[ "$sha" == "$(git rev-parse HEAD)" ]] || { echo "::error::legs built $sha, checkout is $(git rev-parse HEAD)"; exit 1; }
-          args=(candidate --version "$version" --sha "$sha" --targets "$targets" --out candidate.json)
-          [[ "$skip_base" == true ]] && args+=(--skip-base)
-          ./scripts/ci/bakeplan.py "${args[@]}"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: candidate
-          path: candidate.json
-
+          name: staging-candidate
       - name: Attach candidate.json to the release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.candidate.outputs.version }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.setup.outputs.version }}
+          TESTS: ${{ needs.build.outputs.tests }}
         run: |
           if gh release view "$VERSION" >/dev/null 2>&1; then
             gh release upload "$VERSION" candidate.json --clobber
-            echo "Attached candidate.json to release $VERSION" >> "$GITHUB_STEP_SUMMARY"
+            echo "Attached candidate.json (tests $TESTS) to release $VERSION" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "No release named $VERSION; candidate.json is only a workflow artifact." >> "$GITHUB_STEP_SUMMARY"
           fi
-
-  test-plan:
-    needs: candidate
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.legs.outputs.matrix }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          ref: ${{ inputs.version }}
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: candidate
-      - name: One test job per image and platform
-        id: legs
-        run: |
-          ./scripts/ci/bakeplan.py test-matrix --candidate candidate.json
-          jq -r '.images | to_entries[] | "\(.key): \(.value.platforms | join(", "))"' candidate.json
-
-  # universal/amd64 legs gate promotion. arm64 and ascend legs run on native
-  # arm64 runners and only report (continue-on-error) until they are proven.
-  test:
-    needs: test-plan
-    name: test (${{ matrix.branch }}, ${{ matrix.lineup }}, ${{ matrix.arch }})
-    runs-on: ${{ matrix.runner }}
-    continue-on-error: ${{ !matrix.blocking }}
-    permissions:
-      contents: read
-      packages: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.test-plan.outputs.matrix) }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          ref: ${{ inputs.version }}
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: candidate
-      - name: Candidate version
-        id: vars
-        run: echo "version=$(jq -r .version candidate.json)" >> "$GITHUB_OUTPUT"
-      - uses: ./.github/actions/free-disk-space
-      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: ./.github/actions/run-tests
-        with:
-          branches: ${{ matrix.branch }}
-          lineup: ${{ matrix.lineup }}
-          version: ${{ steps.vars.outputs.version }}
-          staging-postfix: -staging
-          pull: 'true'
-          workers: '1'
-          artifact-name: test-output-${{ matrix.target }}-${{ matrix.arch }}
-
-  # Records the outcome in candidate.json; publish-production only promotes
-  # candidates whose tests passed.
-  finalize:
-    needs: [candidate, test]
-    if: always() && needs.candidate.result == 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write   # replace candidate.json on the release
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          ref: ${{ inputs.version }}
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: candidate
-      - name: Record test outcome
-        id: outcome
-        env:
-          TEST_RESULT: ${{ needs.test.result }}
-          CANDIDATE_SOURCE: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          status=failed
-          [[ "$TEST_RESULT" == success ]] && status=passed
-          ./scripts/ci/bakeplan.py set-tests --candidate candidate.json --status "$status"
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-          echo "version=$(jq -r .version candidate.json)" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: candidate
-          path: candidate.json
-          overwrite: true
-      - name: Update candidate.json on the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.outcome.outputs.version }}
-          STATUS: ${{ steps.outcome.outputs.status }}
-        run: |
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            gh release upload "$VERSION" candidate.json --clobber
-          fi
-          echo "Candidate $VERSION: tests **$STATUS**" >> "$GITHUB_STEP_SUMMARY"
-          [[ "$STATUS" == passed ]]
+          [[ "$TESTS" == passed ]]
