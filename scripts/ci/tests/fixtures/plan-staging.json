@@ -1,0 +1,131 @@
+{
+ "group": {
+  "agent-openclaw-all": {
+   "targets": [
+    "agent-openclaw-universal",
+    "agent-openclaw-ascend"
+   ]
+  },
+  "coder": {
+   "targets": [
+    "coder-base",
+    "coder-conda"
+   ]
+  },
+  "default": {
+   "targets": [
+    "agent-openclaw-all",
+    "coder"
+   ]
+  }
+ },
+ "target": {
+  "agent-base-ascend": {
+   "context": "images/agent-base",
+   "contexts": {
+    "artifacts": "artifacts",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/base/Dockerfile",
+   "output": [
+    {
+     "type": "cacheonly"
+    }
+   ],
+   "platforms": [
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-agent-base:v1.2.3-ascend-staging"
+   ]
+  },
+  "agent-base-universal": {
+   "context": "images/agent-base",
+   "contexts": {
+    "artifacts": "artifacts",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/base/Dockerfile",
+   "output": [
+    {
+     "type": "cacheonly"
+    }
+   ],
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-agent-base:v1.2.3-staging"
+   ]
+  },
+  "agent-openclaw-ascend": {
+   "context": "images/agent",
+   "contexts": {
+    "artifacts": "artifacts",
+    "base-image": "target:agent-base-ascend",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/openclaw/Dockerfile",
+   "platforms": [
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-agent:openclaw-v1.2.3-ascend-staging"
+   ]
+  },
+  "agent-openclaw-universal": {
+   "context": "images/agent",
+   "contexts": {
+    "artifacts": "artifacts",
+    "base-image": "target:agent-base-universal",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/openclaw/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-agent:openclaw-v1.2.3-staging"
+   ]
+  },
+  "coder-base": {
+   "context": "images/coder-base",
+   "contexts": {
+    "artifacts": "artifacts",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/base/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-coder-base:v1.2.3-staging"
+   ]
+  },
+  "coder-conda": {
+   "context": "images/coder",
+   "contexts": {
+    "artifacts": "artifacts",
+    "base-image": "target:coder-base",
+    "frontend-src": "frontend",
+    "healthcheck-src": "healthcheck"
+   },
+   "dockerfile": "docker/conda/Dockerfile",
+   "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+   ],
+   "tags": [
+    "ghcr.io/idekube-project/idekube-container-coder:conda-v1.2.3-staging"
+   ]
+  }
+ }
+}

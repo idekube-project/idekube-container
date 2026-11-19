@@ -13,7 +13,7 @@ BRANCH       ?=
 MAX_PARALLEL ?= 4
 BUILDX_BUILDER ?= idekube-builder
 BUILDX_DRIVER  ?= docker-container
-FRONTEND_HASH  ?= $(shell git -C frontend rev-parse --short HEAD 2>/dev/null || echo dev)
+FRONTEND_HASH  ?= $(shell scripts/ci/frontend-hash.sh)
 export FRONTEND_HASH
 
 BAKE_FILES_PRODUCTION := -f docker-bake.hcl -f docker-bake.production.hcl

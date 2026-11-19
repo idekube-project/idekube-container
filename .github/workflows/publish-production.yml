@@ -1,168 +1,144 @@
 name: publish-production
 
+# Promotes a tested release candidate; nothing is built here. The digests in
+# the release's candidate.json (written by publish-staging) are retagged with
+# the release tags, so production ships exactly the bits staging tested.
+#
+#   1. gh release create vX.Y.Z --prerelease       -> publish-staging builds
+#                                                     and tests the candidate
+#   2. gh release edit vX.Y.Z --prerelease=false    -> this workflow promotes
+#
+# Releases created with the workflow GITHUB_TOKEN trigger no workflows, so
+# create them with your own gh login. See CLAUDE.md ("Releasing").
+
 on:
   release:
     types: [released]
   workflow_dispatch:
     inputs:
       version:
-        description: "Image version tag. Defaults to the latest reachable git tag."
-        required: false
+        description: "Release tag to promote (its release must carry candidate.json)."
+        required: true
         type: string
-      lineup:
-        description: "universal, ascend, or both"
-        required: false
-        type: choice
-        options: [universal, ascend, both]
-        default: both
       targets:
-        description: "Bake target/group (e.g. agent-base-ascend, agent-base-all, agent). Empty = full lineup. Run 'make discover GROUP=universal' to list targets. Note: tag-stable is skipped when this is set."
+        description: "Only these bake targets/groups (comma-separated). Empty = the whole candidate. Skips the stable aliases."
         required: false
         type: string
         default: ""
-      skip_base:
-        description: "Skip base-image rebuild — derived targets pull :stable from the registry instead."
+      dry_run:
+        description: "Check the candidate and print the retags without pushing."
         required: false
         type: boolean
         default: false
-      base_tag:
-        description: "Universal base image tag when skip_base is enabled (e.g. stable, v0.8.3)."
+      force:
+        description: "Overwrite release tags that already point to other digests."
         required: false
-        type: string
-        default: "stable"
-      base_tag_ascend:
-        description: "Ascend base image tag when skip_base is enabled. Empty = base_tag + '-ascend'."
-        required: false
-        type: string
-        default: ""
+        type: boolean
+        default: false
+
+concurrency:
+  group: publish-production-${{ github.event.release.tag_name || inputs.version }}
+  cancel-in-progress: false
 
 jobs:
-  publish:
-    name: ${{ matrix.lineup }}
+  promote:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        lineup: [universal, ascend]
     steps:
+      # Tooling comes from the workflow's own ref (the release tag on release
+      # events, the chosen branch on dispatch); the tag only names the commit
+      # the candidate must have been built from. That keeps dry runs against
+      # tags older than this tooling possible.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          submodules: recursive
           fetch-depth: 0
 
-      # Matrix-leg routing:
-      #   - targets set      -> run universal leg only (the default leg). The
-      #                         job builds whatever the targets value resolves
-      #                         to inside bake; the leg label is purely the
-      #                         runner-job slot, not a filter on what's built.
-      #                         Ascend images can still be produced when the
-      #                         requested group contains ascend targets (e.g.
-      #                         agent-ascend, agent-base-all).
-      #   - targets empty    -> lineup input controls (both / universal / ascend).
-      - name: Route matrix leg (targets overrides lineup)
-        if: ${{ github.event_name == 'workflow_dispatch' && ( (github.event.inputs.targets != '' && matrix.lineup != 'universal') || (github.event.inputs.targets == '' && github.event.inputs.lineup != 'both' && github.event.inputs.lineup != matrix.lineup) ) }}
-        env:
-          LINEUP: ${{ matrix.lineup }}
-          INPUT_TARGETS: ${{ github.event.inputs.targets }}
-          INPUT_LINEUP: ${{ github.event.inputs.lineup }}
-        run: |
-          echo "Skipping ${LINEUP} (targets='${INPUT_TARGETS}', lineup='${INPUT_LINEUP}')"
-          echo "SKIP=1" >> "$GITHUB_ENV"
-
       - name: Setup Docker build environment
-        if: env.SKIP != '1'
         uses: ./.github/actions/setup-docker-buildx
         with:
-          login: 'true'
+          login: true
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Validates the dispatch inputs and picks the bake targets for this leg
-      # (skip_base without targets -> <lineup>-derived; skip_base with targets
-      # that still contain a base image -> error). See the script header.
-      - name: Resolve bake targets
-        id: plan
-        if: env.SKIP != '1'
-        env:
-          MATRIX_LINEUP: ${{ matrix.lineup }}
-          INPUT_TARGETS: ${{ github.event.inputs.targets }}
-          SKIP_BASE: ${{ github.event.inputs.skip_base }}
-          BASE_TAG: ${{ github.event.inputs.base_tag }}
-          BASE_TAG_ASCEND: ${{ github.event.inputs.base_tag_ascend }}
-          BAKE_OVERRIDE: docker-bake.production.hcl
-        run: ./scripts/ci-resolve-targets.sh
-
-      - name: Resolve production version
+      - name: Resolve version
         id: vars
-        if: env.SKIP != '1'
         env:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-          INPUT_VERSION: ${{ github.event.inputs.version }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_TARGETS: ${{ inputs.targets }}
         run: |
           if [[ "$EVENT_NAME" == "release" ]]; then
             VERSION="$RELEASE_TAG"
-          elif [[ -n "$INPUT_VERSION" ]]; then
-            VERSION="$INPUT_VERSION"
           else
-            VERSION="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+            VERSION="$INPUT_VERSION"
           fi
-
-          if [[ -z "$VERSION" ]]; then
-            echo "Unable to determine production VERSION. Provide the dispatch version input or create a git tag first." >&2
-            exit 1
-          fi
-
-          # Docker tag grammar; also keeps odd release/tag names out of bake.
           if [[ ! "$VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
             echo "::error::VERSION '$VERSION' is not a valid image tag." >&2
             exit 1
           fi
-
-          FRONTEND_HASH="$(git -C frontend rev-parse --short HEAD)"
+          if [[ -n "$INPUT_TARGETS" && ! "$INPUT_TARGETS" =~ ^[a-z0-9][a-z0-9-]*(,[a-z0-9][a-z0-9-]*)*$ ]]; then
+            echo "::error::targets must be comma-separated bake target/group names, got '$INPUT_TARGETS'" >&2
+            exit 1
+          fi
+          if ! SHA=$(git rev-parse --verify --quiet "refs/tags/${VERSION}^{commit}"); then
+            echo "::error::No git tag named $VERSION." >&2
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "frontend_hash=$FRONTEND_HASH" >> "$GITHUB_OUTPUT"
-          echo "Version=$VERSION  Frontend=$FRONTEND_HASH"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push production images (${{ matrix.lineup }})
-        if: env.SKIP != '1'
-        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
+      - name: Fetch candidate.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.vars.outputs.version }}
+          SHA: ${{ steps.vars.outputs.sha }}
+          DRY_RUN: ${{ inputs.dry_run == true }}
+        run: |
+          if gh release download "$VERSION" --pattern candidate.json --clobber; then
+            jq '{version, sha, created, source, tests, images: (.images | length)}' candidate.json
+            exit 0
+          fi
+          if [[ "$DRY_RUN" == true ]]; then
+            # Rehearsal only: describe whatever the -staging tags hold now.
+            # The promotion step reports why it would refuse this candidate.
+            echo "::warning::release $VERSION has no candidate.json; dry run uses the current -staging tags instead."
+            ./scripts/ci/bakeplan.py candidate --version "$VERSION" --sha "$SHA" --targets universal,ascend --out candidate.json
+            exit 0
+          fi
+          echo "::error::Release $VERSION has no candidate.json, so there is no tested build to promote. Publish it as a prerelease first (publish-staging builds and tests it), or dispatch publish-staging with version=$VERSION, then re-run this workflow." >&2
+          exit 1
+
+      - name: Promote candidate digests
         env:
           VERSION: ${{ steps.vars.outputs.version }}
-          FRONTEND_HASH: ${{ steps.vars.outputs.frontend_hash }}
-          STABLE_TAG: ${{ github.event.inputs.base_tag || 'stable' }}
-          STABLE_TAG_ASCEND: ${{ github.event.inputs.base_tag_ascend }}
-        with:
-          files: |
-            docker-bake.hcl
-            docker-bake.production.hcl
-            ${{ github.event.inputs.skip_base == 'true' && 'docker-bake.skip-base.hcl' || '' }}
-          targets: ${{ steps.plan.outputs.targets }}
-          push: true
+          SHA: ${{ steps.vars.outputs.sha }}
+          INPUT_TARGETS: ${{ inputs.targets }}
+          DRY_RUN: ${{ inputs.dry_run == true }}
+          FORCE: ${{ inputs.force == true }}
+        run: |
+          args=(promote --candidate candidate.json --version "$VERSION" --expect-sha "$SHA")
+          [[ -n "$INPUT_TARGETS" ]] && args+=(--targets "$INPUT_TARGETS")
+          [[ "$DRY_RUN" == true ]] && args+=(--dry-run)
+          [[ "$FORCE" == true ]] && args+=(--force)
+          ./scripts/ci/bakeplan.py "${args[@]}"
 
+      # Base repos get stable / stable-ascend aliases (derived images FROM the
+      # base's stable tag). Only for the latest release, so re-promoting an
+      # older version never moves stable backwards.
       - name: Tag stable
-        if: env.SKIP != '1' && github.event.inputs.targets == ''
+        if: inputs.targets == '' && inputs.dry_run != true
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.vars.outputs.version }}
-          LINEUP: ${{ matrix.lineup }}
         run: |
-          # Retag every base repo's release tag as stable for this lineup only.
-          # Derived repos do not get stable aliases (they FROM the base stable).
-          base_branches="featured/base coder/base jupyter/base agent/base"
-          for branch in $base_branches; do
-            if [[ "$LINEUP" == "ascend" ]] && [[ "$branch" != "featured/base" ]] && [[ "$branch" != "jupyter/base" ]] && [[ "$branch" != "agent/base" ]]; then
-              continue
-            fi
-            ./scripts/tag-stable.sh "$branch" "$VERSION" "$LINEUP"
+          latest=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)
+          if [[ "$latest" != "$VERSION" ]]; then
+            echo "Latest release is $latest, not $VERSION; leaving stable aliases alone." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          for branch in featured/base coder/base jupyter/base agent/base; do
+            ./scripts/tag-stable.sh "$branch" "$VERSION" all
           done
-
-      - name: Skip tag-stable for scoped build
-        if: env.SKIP != '1' && github.event.inputs.targets != ''
-        env:
-          INPUT_TARGETS: ${{ github.event.inputs.targets }}
-        run: |
-          echo "Custom targets='${INPUT_TARGETS}' — skipping tag-stable."
-          echo "Run scripts/tag-stable.sh manually if a stable alias is needed."
