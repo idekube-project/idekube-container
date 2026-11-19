@@ -1,0 +1,4 @@
+{
+  "branch": "featured/speit",
+  "depends_on": "featured/base"
+}

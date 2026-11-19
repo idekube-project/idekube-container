@@ -1,0 +1,4 @@
+{
+  "branch": "featured/dind",
+  "depends_on": "featured/base"
+}
