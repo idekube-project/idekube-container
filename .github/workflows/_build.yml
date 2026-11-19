@@ -87,7 +87,8 @@ jobs:
         id: plan
         env:
           VERSION: ${{ inputs.version }}
-          LINEUPS: ${{ inputs.lineups }}
+          # Not LINEUPS: bake reads env vars named like its variables.
+          IN_LINEUPS: ${{ inputs.lineups }}
           INPUT_TARGETS: ${{ inputs.targets }}
           SKIP_BASE: ${{ inputs.skip_base }}
           BASE_TAG: ${{ inputs.base_tag }}
@@ -96,14 +97,14 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "::error::bad VERSION '$VERSION'"; exit 1; }
-          [[ "$LINEUPS" =~ ^(universal|ascend)(,(universal|ascend))*$ ]] || { echo "::error::bad lineups '$LINEUPS'"; exit 1; }
+          [[ "$IN_LINEUPS" =~ ^(universal|ascend)(,(universal|ascend))*$ ]] || { echo "::error::bad lineups '$IN_LINEUPS'"; exit 1; }
           if [[ -n "$OPENCLAW_VERSION_IN" && ! "$OPENCLAW_VERSION_IN" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::bad openclaw_version '$OPENCLAW_VERSION_IN'"; exit 1
           fi
           # ci-resolve-targets.sh validates the inputs and applies the
           # targets / skip_base rules per lineup ("targets" -> one pass).
           legs=universal
-          [[ -z "$INPUT_TARGETS" ]] && legs=${LINEUPS//,/ }
+          [[ -z "$INPUT_TARGETS" ]] && legs=${IN_LINEUPS//,/ }
           names=()
           for leg in $legs; do
             out=$(mktemp)
