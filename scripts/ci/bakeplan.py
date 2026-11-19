@@ -7,6 +7,10 @@ workflows never re-implement the naming scheme.
 
 Subcommands:
   affected     Targets a change touches (PR CI build/test matrix).
+  matrix       Build jobs: one per flavor, lineup and platform (native runners).
+  override     bake override for one build job (platform, outputs, cache).
+  digests      Per-platform digests a build job pushed (from bake metadata).
+  merge        Assemble multi-platform manifests and write candidate.json.
   candidate    Record the digests a staging build pushed (candidate.json).
   test-matrix  Test jobs for a candidate (one per image and platform).
   set-tests    Record the test outcome in candidate.json.
@@ -253,6 +257,116 @@ def build_candidate(
 
 
 # ---------------------------------------------------------------------------
+# distributed builds
+# ---------------------------------------------------------------------------
+
+# Native runners per platform: no QEMU emulation anywhere.
+RUNNERS = {"linux/amd64": "ubuntu-24.04", "linux/arm64": "ubuntu-24.04-arm"}
+DIGEST_OUTPUT = "type=image,push-by-digest=true,name-canonical=true,push=true"
+
+
+def build_matrix(plan: dict[str, Any]) -> list[dict[str, str]]:
+    """One build job per (flavor, lineup, platform).
+
+    A flavor's base and derived images share a job, so `target:` contexts
+    are resolved inside one bake invocation and never cross jobs.
+    """
+    groups: dict[tuple[str, str, str], list[str]] = {}
+    for name, target in published_targets(plan).items():
+        flavor = target_branch(target).split("/")[0]
+        for platform in target.get("platforms") or []:
+            if platform not in RUNNERS:
+                raise PlanError(f"{name}: no native runner for {platform}")
+            groups.setdefault((flavor, target_lineup(name), platform), []).append(name)
+    jobs = []
+    for (flavor, lineup, platform), names in sorted(groups.items()):
+        arch = platform.split("/")[1]
+        jobs.append({
+            "id": f"{flavor}-{lineup}-{arch}",
+            "platform": platform,
+            "runner": RUNNERS[platform],
+            "targets": ",".join(sorted(names)),
+        })
+    return jobs
+
+
+def bake_override(plan: dict[str, Any], *, platform: str, output: str, cache: str) -> dict[str, Any]:
+    """bake JSON override for one build job.
+
+    Every target (dependency-only ones too) builds for `platform` only.
+    output "digest": published targets push by digest. BuildKit refuses to
+    push a tagged ref by digest and buildx turns tags into the exporter
+    name, so their tags become the bare repository. output "load": load
+    into the local docker engine. cache "readwrite" | "read" | "none":
+    registry cache at <repo>:buildcache-<target>-<arch>; bases export all
+    stages (mode=max), images built FROM another target only their own.
+    """
+    if platform not in RUNNERS:
+        raise PlanError(f"unsupported platform {platform!r}")
+    if output not in ("digest", "load", "none") or cache not in ("readwrite", "read", "none"):
+        raise PlanError(f"bad output/cache mode {output!r}/{cache!r}")
+    arch = platform.split("/")[1]
+    published = published_targets(plan)
+    deps = base_dependencies(plan)
+    targets: dict[str, Any] = {}
+    for name, target in plan.get("target", {}).items():
+        entry: dict[str, Any] = {"platforms": [platform]}
+        tags = target.get("tags") or []
+        repo = split_ref(tags[0])[0] if tags else None
+        if repo and cache != "none":
+            ref = f"{repo}:buildcache-{name}-{arch}"
+            entry["cache-from"] = [f"type=registry,ref={ref}"]
+            if cache == "readwrite":
+                mode = "min" if deps.get(name) else "max"
+                entry["cache-to"] = [f"type=registry,ref={ref},mode={mode},image-manifest=true,oci-mediatypes=true"]
+        if name in published and output == "digest":
+            if not repo:
+                raise PlanError(f"{name} has no tags to derive its repository from")
+            entry["tags"] = [repo]
+            entry["output"] = [DIGEST_OUTPUT]
+        elif name in published and output == "load":
+            entry["output"] = ["type=docker"]
+        targets[name] = entry
+    return {"target": targets}
+
+
+def job_digests(plan: dict[str, Any], metadata: dict[str, Any], *, platform: str) -> dict[str, Any]:
+    """target -> {repo, platform, digest} for what one build job pushed."""
+    out = {}
+    for name, target in published_targets(plan).items():
+        digest = (metadata.get(name) or {}).get("containerimage.digest")
+        if not digest:
+            raise PlanError(f"{name}: no containerimage.digest in the bake metadata")
+        out[name] = {"repo": split_ref(target["tags"][0])[0], "platform": platform, "digest": digest}
+    return out
+
+
+def merge_sources(plan: dict[str, Any], digests: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """target -> per-platform `repo@digest` sources, checked against bake's platforms."""
+    published = published_targets(plan)
+    collected: dict[str, dict[str, str]] = {}
+    for job in digests:
+        for name, entry in job.items():
+            if name not in published:
+                raise PlanError(f"{name}: built but not a published target of this plan")
+            repo = split_ref(published[name]["tags"][0])[0]
+            if entry["repo"] != repo:
+                raise PlanError(f"{name}: pushed to {entry['repo']}, expected {repo}")
+            platforms = collected.setdefault(name, {})
+            if entry["platform"] in platforms:
+                raise PlanError(f"{name}: two digests for {entry['platform']}")
+            platforms[entry["platform"]] = f"{repo}@{entry['digest']}"
+    sources = {}
+    for name, target in sorted(published.items()):
+        got = sorted(collected.get(name, {}))
+        expected = sorted(target.get("platforms") or [])
+        if got != expected:
+            raise PlanError(f"{name}: built for {got or 'nothing'}, bake expects {expected}")
+        sources[name] = [collected[name][p] for p in expected]
+    return sources
+
+
+# ---------------------------------------------------------------------------
 # affected (PR CI)
 # ---------------------------------------------------------------------------
 
@@ -489,6 +603,53 @@ def cmd_set_tests(args: argparse.Namespace) -> None:
     print(f"candidate {doc['version']}: tests {args.status}")
 
 
+def _job_plan(args: argparse.Namespace) -> dict[str, Any]:
+    names = split_names(args.targets)
+    if not names:
+        raise PlanError("--targets is empty")
+    return bake_print(names, version=args.version, staging=args.staging, skip_base=args.skip_base)
+
+
+def cmd_matrix(args: argparse.Namespace) -> None:
+    jobs = build_matrix(_job_plan(args))
+    for job in jobs:
+        print(f"{job['id']:<28} {job['runner']:<18} {job['targets']}", file=sys.stderr)
+    github_output(matrix=json.dumps(jobs, separators=(",", ":")), count=str(len(jobs)))
+
+
+def cmd_override(args: argparse.Namespace) -> None:
+    doc = bake_override(_job_plan(args), platform=args.platform, output=args.output, cache=args.cache)
+    Path(args.out).write_text(json.dumps(doc, indent=2) + "\n")
+
+
+def cmd_digests(args: argparse.Namespace) -> None:
+    metadata = json.loads(Path(args.metadata).read_text())
+    doc = job_digests(_job_plan(args), metadata, platform=args.platform)
+    Path(args.out).write_text(json.dumps(doc, indent=2) + "\n")
+    for name, entry in sorted(doc.items()):
+        print(f"{name} {entry['platform']} {entry['digest']}")
+
+
+def cmd_merge(args: argparse.Namespace) -> None:
+    plan = _job_plan(args)
+    digests = [json.loads(p.read_text()) for p in sorted(Path(args.digests_dir).glob("*.json"))]
+    sources = merge_sources(plan, digests)
+    published = published_targets(plan)
+    for name, srcs in sources.items():
+        cmd = ["docker", "buildx", "imagetools", "create"]
+        for tag in published[name]["tags"]:
+            cmd += ["-t", tag]
+        result = subprocess.run(cmd + srcs, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise PlanError(f"{name}: imagetools create failed: {result.stderr.strip()}")
+        print(f"{name}: {', '.join(published[name]['tags'])} <- {len(srcs)} platform(s)")
+    # Re-read what the tags now hold: checks the platform sets and records
+    # the final index digests.
+    doc = build_candidate(plan, version=args.version, sha=args.sha)
+    Path(args.out).write_text(json.dumps(doc, indent=2) + "\n")
+    print(f"candidate {args.version} @ {args.sha[:7]}: {len(doc['images'])} images -> {args.out}")
+
+
 def cmd_candidate(args: argparse.Namespace) -> None:
     names = split_names(args.targets)
     if not names:
@@ -545,6 +706,38 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--targets", default="", help="explicit comma-separated targets instead of --changed")
     p.add_argument("--lineup", default="universal", choices=["universal", "ascend"])
     p.set_defaults(func=cmd_affected)
+
+    def job_args(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--targets", required=True, help="comma-separated bake targets/groups")
+        p.add_argument("--version", required=True)
+        p.add_argument("--staging", action="store_true", help="layer docker-bake.staging.hcl (-staging tags)")
+        p.add_argument("--skip-base", action="store_true", help="layer docker-bake.skip-base.hcl")
+
+    p = sub.add_parser("matrix", help="build jobs per flavor, lineup and platform (writes matrix/count outputs)")
+    job_args(p)
+    p.set_defaults(func=cmd_matrix)
+
+    p = sub.add_parser("override", help="bake override file for one build job")
+    job_args(p)
+    p.add_argument("--platform", required=True, choices=sorted(RUNNERS))
+    p.add_argument("--output", required=True, choices=["digest", "load", "none"])
+    p.add_argument("--cache", default="read", choices=["readwrite", "read", "none"])
+    p.add_argument("--out", required=True)
+    p.set_defaults(func=cmd_override)
+
+    p = sub.add_parser("digests", help="digests one build job pushed, from bake --metadata-file")
+    job_args(p)
+    p.add_argument("--platform", required=True, choices=sorted(RUNNERS))
+    p.add_argument("--metadata", required=True)
+    p.add_argument("--out", required=True)
+    p.set_defaults(func=cmd_digests)
+
+    p = sub.add_parser("merge", help="create multi-platform manifests from the jobs' digests, write candidate.json")
+    job_args(p)
+    p.add_argument("--digests-dir", required=True)
+    p.add_argument("--sha", required=True)
+    p.add_argument("--out", default="candidate.json")
+    p.set_defaults(func=cmd_merge)
 
     p = sub.add_parser("test-matrix", help="test jobs for a candidate (writes matrix/count outputs)")
     p.add_argument("--candidate", required=True)

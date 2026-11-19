@@ -127,12 +127,17 @@ jobs:
           login: 'false'
           qemu: 'false'
 
+      # Reads the registry cache that main/release builds write; PRs never
+      # write it (no cache poisoning from unreviewed code).
       - name: Build ${{ matrix.target }} (linux/amd64)
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          FRONTEND_HASH=$(./scripts/ci/frontend-hash.sh) docker buildx bake -f docker-bake.hcl \
-            --load --set "*.platform=linux/amd64" "$TARGET"
+          set -euo pipefail
+          ./scripts/ci/bakeplan.py override --targets "$TARGET" --version "$VERSION" \
+            --platform linux/amd64 --output load --cache read --out "$RUNNER_TEMP/override.json"
+          FRONTEND_HASH=$(./scripts/ci/frontend-hash.sh) docker buildx bake \
+            -f docker-bake.hcl -f "$RUNNER_TEMP/override.json" "$TARGET"
 
       - name: nginx configuration is valid
         env:

@@ -294,3 +294,114 @@ def test_set_tests_marks_candidate(tmp_path, monkeypatch):
     assert bakeplan.main(["set-tests", "--candidate", str(path), "--status", "failed"]) == 0
     doc = json.loads(path.read_text())
     assert doc["tests"] == {"status": "failed", "run": "https://example/run/1"}
+
+
+# --- distributed builds ----------------------------------------------------------
+
+
+def test_build_matrix_one_job_per_flavor_lineup_platform():
+    jobs = bakeplan.build_matrix(UNIVERSAL)
+    by_id = {j["id"]: j for j in jobs}
+    assert sorted(by_id) == [
+        "agent-universal-amd64", "agent-universal-arm64",
+        "coder-universal-amd64", "coder-universal-arm64",
+        "featured-universal-amd64", "featured-universal-arm64",
+        "jupyter-universal-amd64", "jupyter-universal-arm64",
+    ]
+    assert by_id["coder-universal-arm64"] == {
+        "id": "coder-universal-arm64",
+        "platform": "linux/arm64",
+        "runner": "ubuntu-24.04-arm",
+        "targets": "coder-base,coder-conda",
+    }
+    assert by_id["featured-universal-amd64"]["runner"] == "ubuntu-24.04"
+
+
+def test_build_matrix_keeps_ascend_on_arm64_only():
+    jobs = bakeplan.build_matrix(STAGING)
+    ascend = [j for j in jobs if "ascend" in j["id"]]
+    assert [j["id"] for j in ascend] == ["agent-ascend-arm64"]
+    assert ascend[0]["targets"] == "agent-openclaw-ascend"
+
+
+def test_override_pushes_published_targets_by_digest_to_their_repo():
+    doc = bakeplan.bake_override(STAGING, platform="linux/arm64", output="digest", cache="readwrite")["target"]
+    conda = doc["coder-conda"]
+    assert conda["tags"] == ["ghcr.io/idekube-project/idekube-container-coder"]
+    assert conda["output"] == [bakeplan.DIGEST_OUTPUT]
+    assert conda["platforms"] == ["linux/arm64"]
+    ref = "ghcr.io/idekube-project/idekube-container-coder:buildcache-coder-conda-arm64"
+    assert conda["cache-from"] == [f"type=registry,ref={ref}"]
+    # FROM another target: own layers only.
+    assert conda["cache-to"] == [f"type=registry,ref={ref},mode=min,image-manifest=true,oci-mediatypes=true"]
+    assert "mode=max" in doc["coder-base"]["cache-to"][0]
+
+
+def test_override_leaves_dependency_only_targets_cacheonly_but_single_platform():
+    doc = bakeplan.bake_override(STAGING, platform="linux/amd64", output="digest", cache="read")["target"]
+    dep = doc["agent-base-universal"]
+    assert dep["platforms"] == ["linux/amd64"]  # never an emulated second platform
+    assert "output" not in dep and "tags" not in dep
+    assert "cache-to" not in dep and dep["cache-from"]
+
+
+def test_override_load_mode_keeps_tags():
+    doc = bakeplan.bake_override(STAGING, platform="linux/amd64", output="load", cache="none")["target"]
+    assert doc["coder-base"] == {"platforms": ["linux/amd64"], "output": ["type=docker"]}
+
+
+def test_override_rejects_emulated_platforms():
+    with pytest.raises(bakeplan.PlanError):
+        bakeplan.bake_override(STAGING, platform="linux/riscv64", output="digest", cache="none")
+
+
+def test_job_digests_reads_bake_metadata():
+    meta = {n: {"containerimage.digest": f"sha256:{i}"} for i, n in enumerate(PUBLISHED)}
+    meta["buildx.build.warnings"] = []
+    doc = bakeplan.job_digests(STAGING, meta, platform="linux/arm64")
+    assert doc["coder-base"] == {
+        "repo": "ghcr.io/idekube-project/idekube-container-coder-base",
+        "platform": "linux/arm64",
+        "digest": "sha256:2",
+    }
+    del meta["coder-conda"]
+    with pytest.raises(bakeplan.PlanError, match="coder-conda"):
+        bakeplan.job_digests(STAGING, meta, platform="linux/arm64")
+
+
+def _jobs(platforms: dict[str, list[str]]) -> list[dict]:
+    jobs = []
+    for platform, names in platforms.items():
+        job = {}
+        for n in names:
+            repo = bakeplan.split_ref(STAGING["target"][n]["tags"][0])[0]
+            job[n] = {"repo": repo, "platform": platform, "digest": f"sha256:{n}-{platform[-5:]}"}
+        jobs.append(job)
+    return jobs
+
+
+def test_merge_sources_pairs_platform_digests():
+    universal = ["agent-openclaw-universal", "coder-base", "coder-conda"]
+    jobs = _jobs({"linux/amd64": universal, "linux/arm64": universal + ["agent-openclaw-ascend"]})
+    sources = bakeplan.merge_sources(STAGING, jobs)
+    assert sources["coder-base"] == [
+        "ghcr.io/idekube-project/idekube-container-coder-base@sha256:coder-base-amd64",
+        "ghcr.io/idekube-project/idekube-container-coder-base@sha256:coder-base-arm64",
+    ]
+    assert len(sources["agent-openclaw-ascend"]) == 1
+
+
+def test_merge_sources_rejects_missing_platform():
+    jobs = _jobs({"linux/amd64": PUBLISHED})
+    with pytest.raises(bakeplan.PlanError, match="bake expects"):
+        bakeplan.merge_sources(STAGING, jobs)
+
+
+def test_merge_sources_rejects_duplicates_and_wrong_repo():
+    jobs = _jobs({"linux/amd64": ["coder-base"]}) * 2
+    with pytest.raises(bakeplan.PlanError, match="two digests"):
+        bakeplan.merge_sources(STAGING, jobs)
+    jobs = _jobs({"linux/amd64": ["coder-base"]})
+    jobs[0]["coder-base"]["repo"] = "ghcr.io/evil/repo"
+    with pytest.raises(bakeplan.PlanError, match="expected"):
+        bakeplan.merge_sources(STAGING, jobs)
