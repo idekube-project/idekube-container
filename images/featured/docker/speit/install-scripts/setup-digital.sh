@@ -1,7 +1,7 @@
 #!/bin/bash
 echo "Setting Up Digital"
 
-DIGITAL_VERSION=${DIGITAL_VERSION:-latest}
+: "${DIGITAL_VERSION:?DIGITAL_VERSION is not set (versions are pinned in docker-bake.hcl)}"
 
 if [ "${DIGITAL_VERSION}" = "latest" ]; then
     wget https://github.com/hneemann/Digital/releases/latest/download/Digital.zip -O /tmp/Digital.zip

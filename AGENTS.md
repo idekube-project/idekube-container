@@ -135,8 +135,20 @@ Release images are built once and promoted, never rebuilt: production ships the 
   - Back in `publish.yml`, `publish-candidate` attaches `candidate.json` to the release named after the version (if any) and fails the run unless tests passed.
 - **Build cache** — lives in the already public image repos as `buildcache-*` tags (a new GHCR package would default to private storage). Main, release and dispatch builds write it; PR builds only read it.
 - **`publish-production.yml` (promotion)** — triggered by `release: released` (a prerelease edited into a release, or a release published directly) and manual dispatch (`version`, `targets`, `dry_run`, `force`). Downloads the release's `candidate.json`, checks it was built from the tag's commit, that its tests passed, and that every `-staging` tag still points to the recorded digest, then `imagetools create`s the release tags from those digests (`bakeplan.py promote`). Release tags that already point elsewhere are refused unless `force`; re-running is idempotent.
+- **`publish-agent-openclaw-scheduled.yml` (OpenClaw fast lane)** — every 12 h: if npm has an OpenClaw version without `openclaw-<release>-<openclaw>` images, rebuild `agent-openclaw-all` from the **latest release tag** (never `main`) on that release's base images (`skip_base`), run it through `_build.yml` (tests included), and promote it with `bakeplan.py promote`. Releases cut before the candidate pipeline (no `scripts/ci/bakeplan.py` at the tag) are skipped. The workflow file runs from `main` while the build uses the tag's scripts, so keep `_build.yml` compatible with the scripts of recent releases.
 - **Stable aliases** — after a full promotion of the version that is `releases/latest`, `scripts/tag-stable.sh` aliases each `*-base` repo's `stable` / `stable-ascend`. Promoting an older release never moves `stable` back.
 - **Auth** — `GITHUB_TOKEN` → GHCR.
+
+### Version pins and Renovate
+
+`docker-bake.hcl` is the only place upstream versions are pinned. Dockerfile `ARG`s carry no version defaults, and the install scripts fail when a version is unset, so a build outside bake cannot silently fall back to `latest`. Each pinned variable has a comment on the line above:
+
+```hcl
+# renovate: datasource=github-releases depName=coder/code-server extractVersion=^v(?<version>.*)$
+variable "CODER_VERSION" { default = "4.92.2" }
+```
+
+Renovate (Mend app, `renovate.json`) reads these with a regex manager. The optional fields must appear in this order: `versioning=`, `extractVersion=`, `registryUrl=`. Renovate also handles GitHub Actions and Dockerfile `FROM` images, and the three `QEMU_VERSION` copies under `qemu-builder/` (one PR). Renovate PRs go through `ci.yml` like any other. `MINICONDA_VERSION`, `NODE_MAJOR` and `ROS_DISTRO` are `# manual:` (no usable datasource, or coupled to other pins). Check the config with `npx --package renovate -- renovate-config-validator renovate.json`.
 
 ### Releasing
 
@@ -173,7 +185,7 @@ publish-staging accepts these `workflow_dispatch` inputs (publish-production onl
 
 **Skip-base mode**: `docker-bake.skip-base.hcl` replaces every `target:` dependency edge with a `docker-image://` registry pull, so bake skips the base-image build entirely. Useful when only a derived target changed (e.g. `agent-openclaw`) and the base is already published. The override sets `STABLE_TAG` / `STABLE_TAG_ASCEND` bake variables from the `base_tag` / `base_tag_ascend` workflow inputs. With `targets` empty, a leg builds `<lineup>-derived` (groups defined in the override) instead of the full lineup, whose base targets would otherwise still be rebuilt and pushed. If `targets` still resolves to a `*-base*` target, the run fails instead of silently rebuilding it.
 
-**Input validation**: `targets` must be comma-separated `[a-z0-9-]` names; `version`, release tags and base tags must match the Docker tag grammar. Actions are pinned to commit SHAs (version in a trailing comment) and kept current by `.github/dependabot.yml`.
+**Input validation**: `targets` must be comma-separated `[a-z0-9-]` names; `version`, release tags and base tags must match the Docker tag grammar. Actions are pinned to commit SHAs (version in a trailing comment) and kept current by Renovate.
 
 Promotion skips the stable aliases when `targets` is set; run `scripts/tag-stable.sh` manually if you need one from a scoped release.
 

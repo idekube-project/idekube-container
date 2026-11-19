@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION:-latest}
+: "${CLAUDE_CODE_VERSION:?CLAUDE_CODE_VERSION is not set (versions are pinned in docker-bake.hcl)}"
 
 # Load nvm
 export NVM_DIR="/usr/local/nvm"

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-NODE_MAJOR=${NODE_MAJOR:-20}
+: "${NODE_MAJOR:?NODE_MAJOR is not set (versions are pinned in docker-bake.hcl)}"
 
 export NVM_DIR="/usr/local/nvm"
 mkdir -p "$NVM_DIR"
