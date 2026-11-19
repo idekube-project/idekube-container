@@ -1,4 +1,0 @@
-{
-  "branch": "agent/hermes",
-  "depends_on": "agent/base"
-}

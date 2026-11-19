@@ -20,7 +20,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# Lineup -> branches. Mirrors docker-bake.hcl groups "universal" / "ascend".
+# Lineup -> branches. Mirrors docker-bake.hcl groups "universal" / "ascend";
+# scripts/ci/tests/test_test_mirrors.py fails when they drift apart.
 LINEUP_BRANCHES: dict[str, list[str]] = {
     "universal": [
         "featured/base",
@@ -65,22 +66,6 @@ BRANCH_REPO: dict[str, str] = {
     "agent/hermes":           "idekube-container-agent",
 }
 
-# Branch -> depends_on. Mirrors the docker-bake.hcl target-context graph.
-BRANCH_DEPENDS_ON: dict[str, str | None] = {
-    "featured/base":          None,
-    "featured/speit":         "featured/base",
-    "featured/speit-ai":      "featured/base",
-    "featured/dind":          "featured/base",
-    "featured/kathara":       "featured/dind",
-    "featured/ros2":          "featured/base",
-    "coder/base":             None,
-    "coder/conda":            "coder/base",
-    "jupyter/base":           None,
-    "jupyter/speit-ai":       "jupyter/base",
-    "agent/base":             None,
-    "agent/openclaw":         "agent/base",
-    "agent/hermes":           "agent/base",
-}
 
 
 def detect_git_tag() -> str:
@@ -188,8 +173,3 @@ def is_image_available(image_ref: str) -> bool:
 def get_flavor(branch: str) -> str:
     """Extract flavor from branch name: 'featured/base' -> 'featured'."""
     return branch.split("/")[0]
-
-
-def get_image_dependencies() -> dict[str, str | None]:
-    """Return {branch: depends_on} mapping (mirror of docker-bake.hcl chain)."""
-    return dict(BRANCH_DEPENDS_ON)

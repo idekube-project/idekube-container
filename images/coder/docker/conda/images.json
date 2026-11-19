@@ -1,4 +1,0 @@
-{
-  "branch": "coder/conda",
-  "depends_on": "coder/base"
-}

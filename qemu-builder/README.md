@@ -132,7 +132,7 @@ The script:
 1. Copies the cloud image (or a previously built root.img if `IDEKUBE_FROM` is set)
 2. Generates a cloud-init ISO from `artifacts/configs/`
 3. Launches QEMU (native first, Docker fallback)
-4. Waits for SSH, rsyncs rootfs overlays, runs Ansible playbook
+4. Waits for SSH, rsyncs the rootfs layers (shared container files, then VM-only overrides), runs Ansible playbook
 5. Copies frontend dist into nginx root (if present)
 6. Performs a clean guest shutdown
 
@@ -297,14 +297,10 @@ idekube-container-qemu-builder/
 |   |-- configs/
 |   |   |-- user-data.yaml      # cloud-init user-data template
 |   |   |-- meta-data.yaml      # cloud-init meta-data
-|   |-- rootfs/                 # Common rootfs overlays (rsynced into VM)
-|   |   |-- authn.sh            # Nginx access-token auth setup
-|   |   |-- etc/idekube/
-|   |       |-- vm-init.sh      # Runtime VM initialization script
-|   |       |-- startup.bash/   # Custom startup hook directory
-|   |   |-- etc/nginx/conf.d/
-|   |       |-- access_token.conf   # Nginx token auth map template
-|   |-- featured/rootfs/        # Feature flavor overlays (XFCE, TurboVNC, noVNC)
+|   |-- rootfs/                 # VM-only files (etc/idekube/vm-init.sh)
+|   |-- featured/rootfs/        # VM-only desktop overrides (Chromium flags, TurboVNC launch)
+|                               # Everything else comes from ../artifacts/rootfs and
+|                               # ../images/<flavor>-base/... (see sync_rootfs in qemu_common.sh)
 |   |-- startup-scripts/
 |       |-- startup.sh          # Container entrypoint
 |       |-- run.sh              # QEMU launcher

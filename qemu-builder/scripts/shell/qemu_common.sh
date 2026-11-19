@@ -9,6 +9,34 @@ META_ROOT="$(cd "${QEMU_ROOT}/.." && pwd)"
 # qemu-builder itself.
 cd "${QEMU_ROOT}"
 
+# Assemble a flavor's VM rootfs overlay at <dest> with <transport...> (an
+# rsync-compatible command: vm_rsync in build_qemu_root.sh, plain rsync in
+# tests). Layers, later ones win:
+#   1. ../artifacts/rootfs: what every image shares (authn.sh, nginx maps and
+#      snippets, skel), minus the container-only init (supervisor, startup.sh)
+#   2. ../images/<flavor>-base/artifacts/docker/<flavor>/rootfs: the flavor's
+#      container overlay (nginx site, desktop config), minus supervisor
+#   3. artifacts/rootfs and artifacts/<flavor>/rootfs here: VM-only files
+# The container images and the VM thus read the same nginx/auth/desktop
+# files; qemu-builder only keeps what the VM does differently.
+function sync_rootfs {
+  local flavor=$1 dest=$2
+  shift 2
+  local container_only=(--exclude=/etc/supervisor/ --exclude=/startup.sh --exclude=/init-containers.sh)
+  local layers=(
+    "${META_ROOT}/artifacts/rootfs"
+    "${META_ROOT}/images/${flavor}-base/artifacts/docker/${flavor}/rootfs"
+    "${QEMU_ROOT}/artifacts/rootfs"
+    "${QEMU_ROOT}/artifacts/${flavor}/rootfs"
+  )
+  local layer
+  for layer in "${layers[@]}"; do
+    [[ -d "$layer" ]] || continue
+    echo "Copying rootfs layer ${layer#"${META_ROOT}/"}..."
+    "$@" "${container_only[@]}" "${layer}/" "${dest}"
+  done
+}
+
 function build_docker_args {
   local env_file=$1
   if [[ ! -f "$env_file" ]]; then

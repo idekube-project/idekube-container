@@ -1,6 +1,6 @@
-# CLAUDE.md
+# Repository guide for coding agents
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file guides coding agents (Claude Code reads `CLAUDE.md`, Codex and others read `AGENTS.md`) working in this repository. `AGENTS.md` is a symlink to this file, so there is only one copy to edit.
 
 ## Project Overview
 
@@ -95,6 +95,17 @@ Anything else is a bug. Audit with:
 grep -nH 'third_party\|tools/idekube-healthcheck\|frontend/dist' images/*/docker/*/Dockerfile
 # (must return nothing)
 ```
+
+## nginx configuration
+
+Each image's `etc/nginx/sites-enabled/default` is `server { include snippets/idekube-server.conf; ... }` plus only that image's own locations:
+
+- `artifacts/rootfs/etc/nginx/snippets/idekube-server.conf`: listen, relative redirects, redacted access log, the token-cookie flow, the `auth_request` endpoint, 401/404 handling, favicon, `/ssh`, `/health` and the landing page.
+- `artifacts/rootfs/etc/nginx/snippets/idekube-coder.conf`: `/coder` (featured, coder).
+- `images/agent-base/artifacts/docker/agent/rootfs/etc/nginx/snippets/idekube-agent.conf`: `/terminal` and `/files` (all agent images; openclaw adds `/agent`).
+- http-level maps live in `artifacts/rootfs/etc/nginx/conf.d/` (`idekube-common.conf`, and `access_token.conf` rendered by `authn.sh`).
+
+The QEMU VM reads the same files: `sync_rootfs` in `qemu-builder/scripts/shell/qemu_common.sh` layers `artifacts/rootfs` and the flavor's container overlay before qemu-builder's few VM-only files.
 
 ## Container Registry
 

@@ -273,8 +273,6 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
 
         # --- Provision VM ---
         FLAVOR=$(echo "$BRANCH" | cut -d'/' -f1)
-        COMMON_ROOTFS="artifacts/rootfs"
-        BRANCH_ROOTFS="artifacts/${FLAVOR}/rootfs"
 
         # Resolve the pre-built idekube-healthcheck binary for the VM arch;
         # Ansible installs it into the VM via a copy task.
@@ -286,13 +284,8 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         fi
         echo "✓ idekube-healthcheck binary resolved: ${HEALTHCHECK_BINARY}"
 
-        # Rsync common rootfs first, then branch-specific overlay on top
-        echo "Copying common rootfs from ${COMMON_ROOTFS}..."
-        vm_rsync "${COMMON_ROOTFS}/" "${SSH_USER}@localhost:/tmp/rootfs/"
-        if [[ -d "${BRANCH_ROOTFS}" ]]; then
-            echo "Copying branch rootfs overlay from ${BRANCH_ROOTFS}..."
-            vm_rsync "${BRANCH_ROOTFS}/" "${SSH_USER}@localhost:/tmp/rootfs/"
-        fi
+        # Shared, flavor and VM-only rootfs layers (see sync_rootfs).
+        sync_rootfs "${FLAVOR}" "${SSH_USER}@localhost:/tmp/rootfs/" vm_rsync
         echo "✓ rootfs copied successfully."
 
         # Apply ansible playbook
