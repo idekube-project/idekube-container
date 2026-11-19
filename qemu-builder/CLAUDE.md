@@ -32,13 +32,10 @@ artifacts/configs/
   user-data.yaml           - cloud-init user-data template (build-time; patched at runtime)
   meta-data.yaml           - cloud-init meta-data (empty)
 
-artifacts/rootfs/
-  authn.sh                 - Nginx access-token authentication setup
-  etc/idekube/vm-init.sh   - Runtime VM initialization (UID remap, SSH keys, shell, startup hooks)
-  etc/idekube/startup.bash/ - Directory for custom startup hook scripts (.sh)
-  etc/nginx/conf.d/access_token.conf - Nginx token auth map template
-
-artifacts/featured/rootfs/  - Feature flavor overlays (XFCE desktop, TurboVNC, noVNC, code-server)
+artifacts/rootfs/           - VM-only files: etc/idekube/vm-init.sh (UID remap, SSH keys,
+                              shell, startup hooks)
+artifacts/featured/rootfs/  - VM-only desktop overrides: Chromium flags (panel launcher,
+                              keyboard shortcuts), TurboVNC xstartup/launcher
 artifacts/startup-scripts/
   startup.sh               - Container entrypoint; patches cloud-init config, then exec run.sh
   run.sh                   - QEMU launcher; detects arch/accel, resizes disk, starts VM
@@ -56,7 +53,7 @@ tools/utility/
 
 1. **QEMU Engine Base** (`Dockerfile.engine`): Compiles QEMU 10.2.0 from source with KVM/VNC/slirp support. Bundles UEFI firmware files, cloud-init configs, and startup scripts. Base image: `ubuntu:24.04`.
 
-2. **Provisioned Disk** (`build_qemu_root.sh`): Copies a cloud image, boots it in QEMU, applies cloud-init (creates `idekube` user with sudo), rsyncs rootfs overlays into the VM, runs an Ansible playbook (`manifests/qemu/<branch>/install.yml`), copies frontend dist, then cleanly shuts down. Output: `root.img` (qcow2).
+2. **Provisioned Disk** (`build_qemu_root.sh`): Copies a cloud image, boots it in QEMU, applies cloud-init (creates `idekube` user with sudo), rsyncs the rootfs layers into the VM (`sync_rootfs` in `qemu_common.sh`: the meta-repo's `artifacts/rootfs` and `images/<flavor>-base/.../rootfs`, the same files the containers use, minus the supervisor/container init, then the VM-only files above; `/etc/skel/.bashrc` gets its VM additions from `install.yml`), runs an Ansible playbook (`manifests/qemu/<branch>/install.yml`), copies frontend dist, then cleanly shuts down. Output: `root.img` (qcow2).
 
 3. **Runtime Container** (`Dockerfile`): Layers the provisioned `root.img` on top of the engine base. Entrypoint: `/startup.sh`.
 

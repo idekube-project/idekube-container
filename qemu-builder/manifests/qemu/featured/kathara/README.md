@@ -55,7 +55,7 @@ for img in kathara/base kathara/frr kathara/quagga; do
 done
 ```
 
-If you want these baked into the disk image, add a new branch (e.g. `featured/kathara-prepulled`) that starts from `featured/kathara` via the `IDEKUBE_FROM` mechanism in `images.json` — boot that VM, start Docker, pull, shut down cleanly. Don't do it in `install.yml` or you'll reintroduce the hang.
+If you want these baked into the disk image, add a new branch (e.g. `featured/kathara-prepulled`) that starts from `featured/kathara` via the `IDEKUBE_FROM` mechanism in the branch's `.env` — boot that VM, start Docker, pull, shut down cleanly. Don't do it in `install.yml` or you'll reintroduce the hang.
 
 ## If it still hangs
 
