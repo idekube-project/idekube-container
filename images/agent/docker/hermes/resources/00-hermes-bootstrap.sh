@@ -41,7 +41,7 @@ else
         $IDEKUBE_HOME/.hermes/webui"
 
     # Copy default config from the template baked into the image
-    TEMPLATE="/opt/hermes/cli-config.yaml.example"
+    TEMPLATE="/opt/hermes/default-config/config.yaml"
     if [ -f "$TEMPLATE" ]; then
         cp "$TEMPLATE" "$CONFIG_FILE"
         chown "$IDEKUBE_USER:$IDEKUBE_USER" "$CONFIG_FILE"
@@ -49,6 +49,27 @@ else
         echo "hermes-bootstrap: template not found at $TEMPLATE"
     fi
 fi
+
+# Share the image's Hermes toolchain and dependency environments with this
+# home. Hermes keeps both per HERMES_HOME; without these links the first
+# launch under a fresh home re-downloads every Python dependency from PyPI
+# (and fails offline). See setup-hermes.sh for the layout.
+install -d -o "$IDEKUBE_USER" -g "$IDEKUBE_USER" "$IDEKUBE_HOME/.hermes"
+for store in installs tools; do
+    link="$IDEKUBE_HOME/.hermes/$store"
+    target="/opt/hermes/$store"
+    if [ -L "$link" ] && [ "$(readlink "$link")" = "$target" ]; then
+        continue
+    fi
+    if [ -e "$link" ] || [ -L "$link" ]; then
+        # Left by an older image or a per-home dependency sync: keep it aside.
+        aside="$link.local-$(date +%Y%m%d%H%M%S)"
+        mv "$link" "$aside"
+        echo "hermes-bootstrap: moved existing $link to $aside"
+    fi
+    ln -s "$target" "$link"
+    chown -h "$IDEKUBE_USER:$IDEKUBE_USER" "$link"
+done
 
 # Ensure .env exists with API_SERVER_KEY
 ENV_FILE="$IDEKUBE_HOME/.hermes/.env"
