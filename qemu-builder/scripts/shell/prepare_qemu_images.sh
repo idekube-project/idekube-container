@@ -24,20 +24,22 @@ else
     ARCHS=("$(normalize_arch "${ARCH:-$(uname -m)}")")
 fi
 DISTRO="noble"
+DISTRO_VERSION="24.04"
 IMAGE_ENDPOINT="cloud-images.ubuntu.com"
 FILES_DIR=".cache/qemu_images"
-# Use "current" — the stable pointer to the latest daily build.
-# Dated snapshots (e.g. 20260108) are periodically pruned from the mirror,
-# which would cause CI 404s on fresh runs without a warm cache.
-TAG="current"
+# Pinned release snapshot. Unlike the daily builds (whose dated directories
+# are pruned, and whose "current" pointer moves every day), the snapshots
+# under releases/<distro>/release-YYYYMMDD/ are kept, so a pin stays
+# downloadable. Bump deliberately; override with CLOUD_IMAGE_RELEASE.
+CLOUD_IMAGE_RELEASE="${CLOUD_IMAGE_RELEASE:-release-20261017}"
 
 echo "Creating directories..."
 mkdir -p "${FILES_DIR}"
 
 for ARCH in "${ARCHS[@]}"; do
     if [ ! -f "${FILES_DIR}/${DISTRO}-${ARCH}.img" ]; then
-        echo "Downloading Base Image for ${ARCH}..."
-        wget -O "${FILES_DIR}/${DISTRO}-${ARCH}.img" "https://${IMAGE_ENDPOINT}/${DISTRO}/${TAG}/${DISTRO}-server-cloudimg-${ARCH}.img"
+        echo "Downloading Base Image for ${ARCH} (${CLOUD_IMAGE_RELEASE})..."
+        wget -O "${FILES_DIR}/${DISTRO}-${ARCH}.img" "https://${IMAGE_ENDPOINT}/releases/${DISTRO}/${CLOUD_IMAGE_RELEASE}/ubuntu-${DISTRO_VERSION}-server-cloudimg-${ARCH}.img"
     else
         echo "Base Image for ${ARCH} Present"
     fi
