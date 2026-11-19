@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import atexit
 import logging
+import os
 import signal
 import socket
 import subprocess
 import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -15,6 +18,44 @@ import requests
 from .constants import BOOTSTRAP_WAIT, CONTAINER_LABEL, HEALTH_POLL_INTERVAL, HEALTH_TIMEOUT
 
 logger = logging.getLogger(__name__)
+
+# Ownership labels. Every test container records the test run and the
+# pytest-xdist worker that started it, so cleanup never touches containers
+# that belong to another worker or to a concurrent test run.
+CONTAINER_RUN_LABEL = f"{CONTAINER_LABEL}-run"
+CONTAINER_WORKER_LABEL = f"{CONTAINER_LABEL}-worker"
+# Leftovers of other runs are only removed once they are this old.
+STALE_AFTER_SECONDS = 2 * 60 * 60
+
+# xdist exports these to its workers before conftest is imported; a plain
+# (non-xdist) session gets a fresh id of its own.
+RUN_ID = os.environ.get("PYTEST_XDIST_TESTRUNUID") or os.environ.setdefault(
+    "IDEKUBE_TEST_RUN_ID", uuid.uuid4().hex
+)
+WORKER_ID = os.environ.get("PYTEST_XDIST_WORKER", "main")
+
+
+def container_labels() -> list[str]:
+    """`docker run` flags that mark a container as owned by this run and worker."""
+    return [
+        "--label", f"{CONTAINER_LABEL}=1",
+        "--label", f"{CONTAINER_RUN_LABEL}={RUN_ID}",
+        "--label", f"{CONTAINER_WORKER_LABEL}={WORKER_ID}",
+    ]
+
+
+def _list_containers(*labels: str) -> list[str]:
+    cmd = ["docker", "ps", "-aq"]
+    for label in labels:
+        cmd += ["--filter", f"label={label}"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return result.stdout.split()
+
+
+def _remove_containers(container_ids: list[str], reason: str) -> None:
+    if container_ids:
+        logger.info("Removing %d %s test containers", len(container_ids), reason)
+        subprocess.run(["docker", "rm", "-f", *container_ids], capture_output=True)
 
 # Global registry of running containers for signal/atexit cleanup
 _running_containers: dict[str, "ContainerManager"] = {}
@@ -43,21 +84,55 @@ for _sig in (signal.SIGINT, signal.SIGTERM):
         pass  # Can't set signal handler in non-main thread
 
 
-def cleanup_stale_containers() -> None:
-    """Remove any leftover containers from interrupted prior runs."""
+def cleanup_own_containers() -> None:
+    """Remove every container this worker of this run started."""
     try:
+        _remove_containers(
+            _list_containers(
+                f"{CONTAINER_LABEL}=1",
+                f"{CONTAINER_RUN_LABEL}={RUN_ID}",
+                f"{CONTAINER_WORKER_LABEL}={WORKER_ID}",
+            ),
+            "own",
+        )
+    except Exception as exc:
+        logger.warning("Failed to clean up own test containers: %s", exc)
+
+
+def cleanup_stale_containers(max_age_seconds: int = STALE_AFTER_SECONDS) -> None:
+    """Remove leftovers of interrupted earlier runs.
+
+    Only call this from one coordinator (the xdist controller, or a plain
+    session). A container is stale when it belongs to a different run *and*
+    was created more than ``max_age_seconds`` ago, so active workers and
+    concurrent test runs keep their containers.
+    """
+    try:
+        candidates = _list_containers(f"{CONTAINER_LABEL}=1")
+        if not candidates:
+            return
         result = subprocess.run(
-            ["docker", "ps", "-aq", "--filter", f"label={CONTAINER_LABEL}=1"],
+            [
+                "docker", "inspect", "--format",
+                f'{{{{.Id}}}} {{{{index .Config.Labels "{CONTAINER_RUN_LABEL}"}}}} {{{{.Created}}}}',
+                *candidates,
+            ],
             capture_output=True,
             text=True,
         )
-        container_ids = result.stdout.strip().splitlines()
-        if container_ids:
-            logger.info("Cleaning up %d stale test containers", len(container_ids))
-            subprocess.run(
-                ["docker", "rm", "-f", *container_ids],
-                capture_output=True,
+        now = datetime.now(timezone.utc)
+        stale = []
+        for line in result.stdout.splitlines():
+            container_id, run_id, created = (line.split(" ", 2) + ["", ""])[:3]
+            if run_id == RUN_ID:
+                continue
+            # RFC 3339 with nanoseconds; seconds precision is plenty here.
+            created_at = datetime.strptime(created[:19], "%Y-%m-%dT%H:%M:%S").replace(
+                tzinfo=timezone.utc
             )
+            if (now - created_at).total_seconds() > max_age_seconds:
+                stale.append(container_id[:12])
+        _remove_containers(stale, "stale")
     except Exception as exc:
         logger.warning("Failed to clean up stale containers: %s", exc)
 
@@ -117,8 +192,7 @@ class ContainerManager:
                 "docker",
                 "run",
                 "-d",
-                "--label",
-                f"{CONTAINER_LABEL}=1",
+                *container_labels(),
                 *port_mappings,
                 *env_flags,
             ]

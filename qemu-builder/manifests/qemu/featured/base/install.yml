@@ -5,6 +5,9 @@
   vars:
     websocat_version: "1.13.0"
     coder_version: "4.92.2"
+    # Exact packagecloud apt versions; keep in step with docker-bake.hcl.
+    virtualgl_version: "3.1.5-20260814"
+    turbovnc_version: "3.3.1-20260820"
 
   tasks:
     # Install essential packages
@@ -258,19 +261,23 @@
         shell: wget -q -O- https://packagecloud.io/dcommander/turbovnc/gpgkey | gpg --dearmor > /etc/apt/trusted.gpg.d/TurboVNC.gpg
         args:
           creates: /etc/apt/trusted.gpg.d/TurboVNC.gpg
+      # Same lines as github.com/{VirtualGL,TurboVNC}/repo main/*.list, written
+      # inline instead of fetched from a moving branch at build time.
       - name: Add VirtualGL repository
-        get_url:
-          url: https://raw.githubusercontent.com/VirtualGL/repo/main/VirtualGL.list
+        copy:
           dest: /etc/apt/sources.list.d/VirtualGL.list
+          content: |
+            deb [signed-by=/etc/apt/trusted.gpg.d/VirtualGL.gpg] https://packagecloud.io/dcommander/virtualgl/any/ any main
       - name: Add TurboVNC repository
-        get_url:
-          url: https://raw.githubusercontent.com/TurboVNC/repo/main/TurboVNC.list
+        copy:
           dest: /etc/apt/sources.list.d/TurboVNC.list
+          content: |
+            deb [signed-by=/etc/apt/trusted.gpg.d/TurboVNC.gpg] https://packagecloud.io/dcommander/turbovnc/any/ any main
       - name: Install VirtualGL and TurboVNC
         apt:
           name:
-            - virtualgl
-            - turbovnc
+            - "virtualgl={{ virtualgl_version }}"
+            - "turbovnc={{ turbovnc_version }}"
           state: present
           update_cache: yes
       - name: Create XFCE session symlink for TurboVNC
@@ -348,7 +355,7 @@
             Type=simple
             User=idekube
             WorkingDirectory=/home/idekube
-            ExecStart=/usr/local/bin/turbovnc-launch.sh :1 -geometry 1280x800 -depth 24 -SecurityTypes None -fg -xstartup /home/idekube/.vnc/xstartup.turbovnc
+            ExecStart=/usr/local/bin/turbovnc-launch.sh :1 -geometry 1280x800 -depth 24 -SecurityTypes None -localhost -fg -xstartup /home/idekube/.vnc/xstartup.turbovnc
             ExecStop=/opt/TurboVNC/bin/vncserver -kill :1
             Restart=on-failure
             RestartSec=5
@@ -387,7 +394,7 @@
             [Service]
             Type=simple
             WorkingDirectory=/var/lib/novnc
-            ExecStart=/bin/bash ./utils/novnc_proxy --vnc localhost:5901 --listen 6081
+            ExecStart=/bin/bash ./utils/novnc_proxy --vnc localhost:5901 --listen 127.0.0.1:6081
             Restart=always
             RestartSec=5
 
@@ -404,7 +411,7 @@
             [Service]
             Type=simple
             User=idekube
-            ExecStart=/usr/local/bin/code-server --bind-addr 0.0.0.0:3000 --auth none --cert false
+            ExecStart=/usr/local/bin/code-server --bind-addr 127.0.0.1:3000 --auth none --cert false
             Restart=always
             RestartSec=5
 
@@ -426,6 +433,40 @@
 
             [Install]
             WantedBy=multi-user.target
+      # Runs authn.sh on every boot, after cloud-init has written
+      # /etc/idekube/runtime-env (the unit was renamed to
+      # cloud-init-network.service in newer cloud-init) and before nginx.
+      # Under WSL cloud-init is disabled, so no runtime-env exists and
+      # authn.sh renders the permit-all config.
+      - name: Create idekube-authn systemd service
+        copy:
+          dest: /etc/systemd/system/idekube-authn.service
+          content: |
+            [Unit]
+            Description=IDEKube nginx access-token configuration
+            After=local-fs.target cloud-init.service cloud-init-network.service
+            Before=nginx.service
+
+            [Service]
+            Type=oneshot
+            ExecStart=/bin/bash -c 'set -a; if [ -f /etc/idekube/runtime-env ]; then . /etc/idekube/runtime-env; fi; set +a; exec /bin/bash /authn.sh'
+
+            [Install]
+            WantedBy=multi-user.target
+      # nginx refuses to start when the access-token config could not be
+      # rendered, mirroring the container entrypoint.
+      - name: Create nginx drop-in directory
+        file:
+          path: /etc/systemd/system/nginx.service.d
+          state: directory
+          mode: '0755'
+      - name: Make nginx depend on idekube-authn
+        copy:
+          dest: /etc/systemd/system/nginx.service.d/idekube-authn.conf
+          content: |
+            [Unit]
+            Requires=idekube-authn.service
+            After=idekube-authn.service
 
     # Enable and start services
     - name: Reload systemd daemon
@@ -445,6 +486,13 @@
         - novnc
         - code-server
         - idekube-healthcheck
+
+    # Enabled only. Starting it here would render a permit-all config into
+    # the image instead of keeping the fail-closed default.
+    - name: Enable idekube-authn for runtime boots
+      systemd:
+        name: idekube-authn
+        enabled: yes
 
     - name: Add ENV VARIABLE to /etc/profile.d/idekube.sh
       copy:
@@ -470,6 +518,12 @@
         shell:
           rsync -a --delete /etc/skel/ /home/idekube/
         ignore_errors: yes
+
+    # The image must ship the fail-closed (deny-all) access-token config;
+    # only idekube-authn.service at runtime may replace it.
+    - name: Check the access-token config is still the fail-closed default
+      command: grep -q 'Fail-closed default' /etc/nginx/conf.d/access_token.conf
+      changed_when: false
 
     # Clean cloud-init state so it re-runs on first runtime boot
     - name: Clean cloud-init state

@@ -25,14 +25,30 @@ echo "Copying configuration files..."
 mkdir -p ./configs
 cp -r "${SOURCE_DIR}/configs/"* ./configs/
 
-# Copy root disk image
-echo "Copying root disk image..."
+# Seed the root disk image. ${WORK_DIR} may be a persistent volume: an
+# existing root.img holds the user's system and files, so it is only replaced
+# when IDEKUBE_VM_RESET_DISK is set. The copy goes through a temp file so an
+# interrupted first copy never leaves a truncated root.img behind.
 mkdir -p ./images
-if ! cp -r "${SOURCE_DIR}/images/root.img" ./images/; then
-    echo "Error: Failed to copy root disk image from ${SOURCE_DIR}/images/root.img" >&2
-    echo "       The image may not have been built. Run 'make qemu-root BRANCH=<flavor>/<variant>' first." >&2
-    exit 1
+if [ -f ./images/root.img ] && [ -z "${IDEKUBE_VM_RESET_DISK:-}" ]; then
+    echo "Keeping existing root disk image ./images/root.img (set IDEKUBE_VM_RESET_DISK=1 to reset it)."
+else
+    echo "Copying root disk image..."
+    if ! cp "${SOURCE_DIR}/images/root.img" ./images/root.img.tmp; then
+        rm -f ./images/root.img.tmp
+        echo "Error: Failed to copy root disk image from ${SOURCE_DIR}/images/root.img" >&2
+        echo "       The image may not have been built. Run 'make qemu-root BRANCH=<flavor>/<variant>' first." >&2
+        exit 1
+    fi
+    mv -f ./images/root.img.tmp ./images/root.img
 fi
+
+# Give every container start a new cloud-init instance-id. With a persisted
+# disk, cloud-init would otherwise treat the boot as already provisioned and
+# skip write_files/runcmd, so a changed IDEKUBE_* environment (for example a
+# rotated access token) would never reach the VM. Side effect: SSH host keys
+# are regenerated on each start, as for a freshly created container.
+printf 'instance-id: idekube-%s\n' "$(cat /proc/sys/kernel/random/uuid)" > ./configs/meta-data.yaml
 
 # ------------------------------------------------------------------
 # Patch the build-time user-data.yaml (copied above from ${SOURCE_DIR}/configs)

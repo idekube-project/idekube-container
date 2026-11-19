@@ -129,3 +129,30 @@ target "agent-hermes" {
     "base-image"      = "docker-image://${REGISTRY}/${AUTHOR}/${NAME_PREFIX}-agent-base:${STABLE_TAG}"
   }
 }
+
+# --- derived-only groups -----------------------------------------------------
+# What a lineup builds when skip_base is set and no explicit targets are given.
+# The full `universal` / `ascend` groups list the base targets directly, so
+# layering this file alone would still rebuild (and push) them.
+
+group "universal-derived" {
+  targets = [
+    "featured-speit",
+    "featured-speit-ai-universal",
+    "featured-dind",
+    "featured-kathara",
+    "featured-ros2",
+    "coder-conda",
+    "jupyter-speit-ai-universal",
+    "agent-openclaw-universal",
+    "agent-hermes",
+  ]
+}
+
+group "ascend-derived" {
+  targets = [
+    "featured-speit-ai-ascend",
+    "jupyter-speit-ai-ascend",
+    "agent-openclaw-ascend",
+  ]
+}

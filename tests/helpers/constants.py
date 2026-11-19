@@ -40,6 +40,7 @@ FLAVOR_HEALTH = {
         "main": "terminal",
         "services": {
             "terminal": {"port": 7681, "path": "/terminal"},
+            "files": {"port": 5000, "path": "/files"},
             "ssh": {"port": 2222, "path": "/ssh"},
         },
     },
@@ -56,6 +57,7 @@ BRANCH_HEALTH_OVERRIDES: dict[str, dict] = {
         "services": {
             "agent": {"port": 18789, "path": "/agent"},
             "terminal": {"port": 7681, "path": "/terminal"},
+            "files": {"port": 5000, "path": "/files"},
             "ssh": {"port": 2222, "path": "/ssh"},
         },
     },
@@ -82,7 +84,7 @@ DESKTOP_BRANCHES = {
 }
 
 # Services that are browser-testable (have an nginx path on port 80)
-BROWSER_TESTABLE_SERVICES = {"vnc", "coder", "jupyter", "terminal", "agent"}
+BROWSER_TESTABLE_SERVICES = {"vnc", "coder", "jupyter", "terminal", "agent", "files"}
 
 # Bootstrap wait before health polling (seconds) — gives supervisord time to start
 BOOTSTRAP_WAIT = 20

@@ -64,16 +64,19 @@ tools/utility/
 
 ```
 Container start
-  -> startup.sh: copies UEFI/configs/disk to working dir, patches user-data.yaml
-     (disables ssh_pwauth, injects write_files for runtime-env, adds runcmd for vm-init.sh)
+  -> startup.sh: copies UEFI/configs to working dir, seeds root.img only if absent
+     (or IDEKUBE_VM_RESET_DISK), writes a fresh cloud-init instance-id, patches
+     user-data.yaml (disables ssh_pwauth, injects write_files for runtime-env,
+     adds runcmd for vm-init.sh)
   -> exec run.sh: detects arch, configures accelerator (KVM/HVF/TCG), resizes disk,
      generates cloud-init ISO, launches QEMU
   -> QEMU boots guest
-  -> cloud-init: writes /etc/idekube/runtime-env, runs vm-init.sh
-  -> vm-init.sh: UID remap, preferred shell, home init from /etc/skel,
-     SSH authorized keys (base64-decoded), authn.sh (nginx token auth),
-     disables SSH password auth, runs /etc/idekube/startup.bash/*.sh hooks,
-     restarts nginx
+  -> cloud-init: writes /etc/idekube/runtime-env
+  -> idekube-authn.service: authn.sh renders the nginx token config
+     (before nginx.service, which Requires= it)
+  -> cloud-init runcmd -> vm-init.sh: UID remap, preferred shell, home init
+     from /etc/skel, SSH authorized keys (base64-decoded), disables SSH
+     password auth, runs /etc/idekube/startup.bash/*.sh hooks
 ```
 
 ## Key Concepts
@@ -81,7 +84,7 @@ Container start
 - **cloud-init**: Used both at build time (user creation, password auth for Ansible) and at runtime (injecting env vars, triggering vm-init.sh). The build-time `user-data.yaml` is patched at runtime by `startup.sh`.
 - **UEFI firmware**: EDK2 for aarch64, OVMF for x86_64. Extracted from the QEMU source tarball during `prepare_qemu_files.sh`.
 - **Accelerator detection**: `run.sh` probes for HVF (macOS), KVM (Linux), or falls back to TCG software emulation. Controllable via `IDEKUBE_VM_DISABLE_KVM`.
-- **Nginx token auth**: Template-based. `authn.sh` replaces `__IDEKUBE_ACCESS_TOKEN_PLACEHOLDER__` with the real token or writes a permit-all config.
+- **Nginx token auth**: `authn.sh` renders `/etc/nginx/conf.d/access_token.conf` from the read-only template `/etc/idekube/nginx/access_token.conf.template` on every boot (token map), writes a permit-all map when no token is set, and a deny-all map plus non-zero exit on any failure. The image ships the deny-all map.
 - **WSL2 conversion**: `build_wsl.sh` uses libguestfs to apply WSL-specific tweaks (wsl.conf, blank fstab, disable cloud-init) and exports the rootfs as a tarball importable via `wsl --import`.
 - **IDEKUBE_FROM**: Allows layering builds; copies `root.img` from a previously built branch instead of a fresh cloud image.
 
@@ -117,17 +120,20 @@ Container start
 | `IDEKUBE_AUTHORIZED_KEYS` | (unset) | Base64-encoded SSH authorized_keys |
 | `IDEKUBE_PREFERED_SHELL` | `/bin/bash` | Default shell for idekube user |
 | `IDEKUBE_INIT_HOME` | (unset) | Force re-initialize home from /etc/skel |
-| `IDEKUBE_ACCESS_TOKEN` | (unset) | Nginx access token (unset = permit all) |
+| `IDEKUBE_ACCESS_TOKEN` | (unset) | Nginx access token, `[A-Za-z0-9._-]+` (unset = permit all; invalid = nginx stays down) |
+| `IDEKUBE_VM_RESET_DISK` | (unset) | Replace an existing `root.img` in the work dir (default: keep it) |
 | `IDEKUBE_SSH_PORT` | `22` | Host port for SSH forwarding |
 | `IDEKUBE_WEB_PORT` | `80` | Host port for HTTP forwarding |
-| `IDEKUBE_MONITOR_PORT` | `23` | Host port for QEMU monitor telnet |
+| `IDEKUBE_MONITOR_SOCKET` | `./qemu-monitor.sock` | QEMU monitor unix socket |
+| `IDEKUBE_MONITOR_PORT` | (unset) | Opt-in telnet monitor on 127.0.0.1 only |
+| `IDEKUBE_VM_HOSTFWD_ADDR` | (empty = all) | Listen address for the SSH/HTTP forwards |
 
 ## Networking
 
 QEMU user-mode networking with port forwards:
 - SSH: host port -> guest :22
 - HTTP: host port -> guest :80
-- VNC: host :5901 -> guest :5901
-- QEMU monitor: host port -> guest telnet
+- VNC is not forwarded (passwordless; guest-local, reached via nginx `/vnc`)
+- QEMU monitor: unix socket in the work dir, never a network port
 
 The featured flavor nginx reverse-proxies internal services: noVNC (:6081), code-server (:3000), WebSocket SSH (:2222), and a health endpoint (:9999).

@@ -21,7 +21,12 @@ from helpers.constants import (
     PRIVILEGED_BRANCHES,
     get_expected_health,
 )
-from helpers.containers import ContainerManager, allocate_port, cleanup_stale_containers
+from helpers.containers import (
+    ContainerManager,
+    allocate_port,
+    cleanup_own_containers,
+    cleanup_stale_containers,
+)
 from helpers.images import (
     get_flavor,
     get_lineup_branches,
@@ -40,7 +45,9 @@ TEST_SSH_PUBKEY = (
 )
 TEST_SSH_AUTHORIZED_KEYS_B64 = base64.b64encode(TEST_SSH_PUBKEY.encode()).decode()
 
-ACCESS_TOKEN = "test-token-123"
+# Mixed case and a "." on purpose: the gateway must compare tokens
+# case-sensitively and treat "." literally (not as a regex wildcard).
+ACCESS_TOKEN = "Idekube.Test_Token-123"
 
 
 # ---------------------------------------------------------------------------
@@ -101,12 +108,22 @@ def nvidia_runtime_available() -> bool:
         return False
 
 
+def pytest_sessionstart(session):
+    """Sweep leftovers of interrupted earlier runs, once per test run.
+
+    xdist workers have ``workerinput``; only the controller (or a plain,
+    non-xdist session) acts as the coordinator, so workers never remove each
+    other's containers.
+    """
+    if not hasattr(session.config, "workerinput"):
+        cleanup_stale_containers()
+
+
 @pytest.fixture(scope="session", autouse=True)
-def _cleanup_stale(output_dir):
-    """Remove leftover containers from interrupted prior runs at session start."""
-    cleanup_stale_containers()
+def _cleanup_own(output_dir):
+    """At session end, remove every container this worker started."""
     yield
-    cleanup_stale_containers()
+    cleanup_own_containers()
 
 
 # ---------------------------------------------------------------------------

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from conftest import (
@@ -12,6 +14,30 @@ from conftest import (
     save_screenshot,
 )
 from helpers.constants import get_expected_health
+
+# Heavy web apps (code-server's workbench in particular) keep building their UI
+# in JavaScript well after the network goes idle, so poll for it.
+UI_RENDER_TIMEOUT = 45
+
+
+def _ui_state(page, checks) -> tuple[str, bool, bool]:
+    """Return (title, title_ok, selector_found) for the page as it is right now."""
+    try:
+        title = page.title()
+    except Exception:  # page still navigating
+        title = ""
+    title_ok = not checks["title_contains"] or any(
+        t.lower() in title.lower() for t in checks["title_contains"]
+    )
+    selector_found = False
+    for selector in checks["selectors"]:
+        try:
+            if page.locator(selector).count() > 0:
+                selector_found = True
+                break
+        except Exception:
+            continue
+    return title, title_ok, selector_found
 
 
 def pytest_generate_tests(metafunc):
@@ -31,7 +57,7 @@ SERVICE_CHECKS = {
     },
     "coder": {
         "description": "Code Server IDE",
-        "selectors": [".monaco-editor", "#workbench\\.parts\\.editor", "iframe"],
+        "selectors": [".monaco-workbench", ".monaco-editor", "#workbench\\.parts\\.editor", "iframe"],
         "title_contains": ["code", "Code", "VS Code"],
     },
     "jupyter": {
@@ -46,6 +72,11 @@ SERVICE_CHECKS = {
     },
     "agent": {
         "description": "openclaw agent gateway",
+        "selectors": ["body"],
+        "title_contains": [],
+    },
+    "files": {
+        "description": "dufs file browser",
         "selectors": ["body"],
         "title_contains": [],
     },
@@ -86,25 +117,17 @@ class TestServices:
         page.goto(url, wait_until="networkidle", timeout=60000)
 
         checks = SERVICE_CHECKS[service_name]
-        title = page.title().lower()
-        title_ok = not checks["title_contains"] or any(
-            t.lower() in title for t in checks["title_contains"]
-        )
-
-        selector_found = False
-        for selector in checks["selectors"]:
-            try:
-                if page.locator(selector).count() > 0:
-                    selector_found = True
-                    break
-            except Exception:
-                continue
+        deadline = time.monotonic() + UI_RENDER_TIMEOUT
+        title, title_ok, selector_found = _ui_state(page, checks)
+        while not (title_ok or selector_found) and time.monotonic() < deadline:
+            page.wait_for_timeout(500)
+            title, title_ok, selector_found = _ui_state(page, checks)
 
         slug = branch.replace("/", "-")
         save_screenshot(request.node, page, f"{slug}_{service_name}_ui")
 
         assert title_ok or selector_found, (
-            f"Service {service_name} ({checks['description']}): "
-            f"title '{page.title()}' doesn't match {checks['title_contains']} "
+            f"Service {service_name} ({checks['description']}): after {UI_RENDER_TIMEOUT}s "
+            f"title {title!r} doesn't match {checks['title_contains']} "
             f"and none of selectors {checks['selectors']} found"
         )

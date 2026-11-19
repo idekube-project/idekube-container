@@ -111,8 +111,10 @@ if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
 fi
 
 # --- Configuration ---
+# The build VM accepts password SSH (idekube:idekube) for Ansible, so every
+# forwarded port is bound to 127.0.0.1 only. The QEMU monitor stays on its
+# default unix socket inside the working directory.
 SSH_PORT="${IDEKUBE_SSH_PORT:-10022}"
-MONITOR_PORT="${IDEKUBE_MONITOR_PORT:-10023}"
 HTTP_PORT="${IDEKUBE_WEB_PORT:-8080}"
 
 CACHE_ABS_PATH=$(cd "${CACHE_DIR}" && pwd)
@@ -176,8 +178,8 @@ if [[ "${QEMU_LAUNCH_MODE}" == "native" || "${QEMU_LAUNCH_MODE}" == "auto" ]] &&
     export IDEKUBE_VM_CPU
     export IDEKUBE_VM_DISK_SIZE
     export IDEKUBE_SSH_PORT="${SSH_PORT}"
-    export IDEKUBE_MONITOR_PORT="${MONITOR_PORT}"
     export IDEKUBE_WEB_PORT="${HTTP_PORT}"
+    export IDEKUBE_VM_HOSTFWD_ADDR=127.0.0.1
 
     cd "${CACHE_ABS_PATH}" || { echo "Failed to cd to ${CACHE_ABS_PATH}"; exit 1; }
 
@@ -232,9 +234,8 @@ if [[ -z "${VM_MODE}" ]]; then
         --name "${CONTAINER_NAME}" \
         --privileged \
         "${KVM_ARGS[@]}" \
-        -p "${SSH_PORT}:22" \
-        -p "${MONITOR_PORT}:23" \
-        -p "${HTTP_PORT}:80" \
+        -p "127.0.0.1:${SSH_PORT}:22" \
+        -p "127.0.0.1:${HTTP_PORT}:80" \
         -v "${CACHE_ABS_PATH}:/var/lib/data" \
         -e IDEKUBE_VM_MEMORY="${IDEKUBE_VM_MEMORY}" \
         -e IDEKUBE_VM_CPU="${IDEKUBE_VM_CPU}" \

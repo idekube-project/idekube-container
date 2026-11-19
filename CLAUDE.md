@@ -15,6 +15,7 @@ The build system is **centralized**: a single `docker-bake.hcl` at the meta-repo
 - **`docker-bake.production.hcl`** — Override file for production releases. Adds GHA build cache.
 - **`Makefile`** — Thin wrappers around `docker buildx bake` plus the test-suite entry points.
 - **`scripts/tag-stable.sh`** — Post-publish helper that creates stable aliases via `docker buildx imagetools create`.
+- **`scripts/ci-resolve-targets.sh`** — Called by both publish workflows: validates dispatch inputs (passed via `env:`, never `${{ }}`-interpolated into `run:`) and resolves the bake targets for a matrix leg.
 - **`tests/`** — pytest + Playwright test suite (parametrized per branch) for end-to-end verification.
 - **`.github/workflows/publish.yml`** — Staging workflow for PRs, `main` branch pushes, and manual dispatch.
 - **`.github/workflows/publish-production.yml`** — Production workflow for GitHub releases and manual dispatch. Uses `docker/bake-action@v7` with a `[universal, ascend]` job matrix.
@@ -147,7 +148,9 @@ Both publish workflows accept these `workflow_dispatch` inputs:
 
 **Routing rule**: when `targets` is non-empty, exactly **one** runner job runs — the universal leg (the default leg). The job builds whatever the `targets` value resolves to via bake's group expansion. The matrix leg label is just a runner-job slot, not a filter on what bake builds — ascend images can still be produced when the requested group (e.g. `agent-ascend`, `agent-base-all`) contains ascend targets, and they're built via qemu-emulated arm64 on the amd64 runner.
 
-**Skip-base mode**: `docker-bake.skip-base.hcl` replaces every `target:` dependency edge with a `docker-image://` registry pull, so bake skips the base-image build entirely. Useful when only a derived target changed (e.g. `agent-openclaw`) and the base is already published. The override sets `STABLE_TAG` / `STABLE_TAG_ASCEND` bake variables from the `base_tag` / `base_tag_ascend` workflow inputs.
+**Skip-base mode**: `docker-bake.skip-base.hcl` replaces every `target:` dependency edge with a `docker-image://` registry pull, so bake skips the base-image build entirely. Useful when only a derived target changed (e.g. `agent-openclaw`) and the base is already published. The override sets `STABLE_TAG` / `STABLE_TAG_ASCEND` bake variables from the `base_tag` / `base_tag_ascend` workflow inputs. With `targets` empty, a leg builds `<lineup>-derived` (groups defined in the override) instead of the full lineup, whose base targets would otherwise still be rebuilt and pushed. If `targets` still resolves to a `*-base*` target, the run fails instead of silently rebuilding it.
+
+**Input validation**: `targets` must be comma-separated `[a-z0-9-]` names; `version`, release tags and base tags must match the Docker tag grammar. Actions are pinned to commit SHAs (version in a trailing comment) and kept current by `.github/dependabot.yml`.
 
 In production, the `tag-stable` step is skipped when `targets` is set; run `scripts/tag-stable.sh` manually if you need a stable alias from a scoped build.
 
@@ -168,7 +171,8 @@ make test_all_ascend                  # ascend lineup
 - `IDEKUBE_PREFERED_SHELL` — Path to preferred shell
 - `IDEKUBE_USER_UID` — Override container user UID
 - `IDEKUBE_AUTHORIZED_KEYS` — Base64-encoded SSH authorized keys
-- `IDEKUBE_ACCESS_TOKEN` — Nginx-level web auth token (excludes `/ssh`)
+- `IDEKUBE_ACCESS_TOKEN` — Nginx-level web auth token (excludes `/ssh`). Letters, digits, `.`, `_`, `-` only, compared case-sensitively. `/authn.sh` re-renders the nginx map from the read-only template `/etc/idekube/nginx/access_token.conf.template` on every start; an invalid token makes the container exit (fail closed), and the image ships a deny-all map
+- `IDEKUBE_ROOTFS_RESET` — With `I_AM_INIT_CONTAINER`, re-seed an already initialized `/rootfs` volume (otherwise the init container skips it)
 
 ## What's Gone
 

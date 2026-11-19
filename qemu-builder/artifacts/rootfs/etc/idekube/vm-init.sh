@@ -6,8 +6,12 @@
 # Reads /etc/idekube/runtime-env (written by cloud-init write_files from the
 # container's IDEKUBE_* environment variables) and applies the same runtime
 # configuration as artifacts/docker/rootfs/startup.sh does for native images:
-# UID remapping, preferred shell, home init, SSH authorized keys, nginx
-# access-token auth, SSH password lockdown, and startup hooks.
+# UID remapping, preferred shell, home init, SSH authorized keys, SSH
+# password lockdown, and startup hooks.
+#
+# nginx access-token auth is NOT handled here: idekube-authn.service runs
+# /authn.sh on every boot before nginx starts (see install.yml), so nginx
+# never serves with a stale or unrendered token config.
 #
 
 USER=idekube
@@ -81,7 +85,7 @@ if [ -d "$HOME" ]; then
 else
     echo "Warning: Home folder $HOME does not exist"
 fi
-chmod 755 "$HOME" 2>/dev/null || echo "Warning: Failed to set permissions on home folder"
+chmod 750 "$HOME" 2>/dev/null || echo "Warning: Failed to set permissions on home folder"
 
 # ------------------------------------------------------
 # Home initialization
@@ -126,11 +130,6 @@ fi
 chown -R "$USER:$USER" "$HOME/.ssh" 2>/dev/null || echo "Warning: Failed to change ownership of .ssh"
 
 # ------------------------------------------------------
-# Access token auth (nginx)
-# ------------------------------------------------------
-bash /authn.sh
-
-# ------------------------------------------------------
 # Disable SSH password authentication
 # ------------------------------------------------------
 echo "Disabling SSH password authentication"
@@ -160,11 +159,5 @@ if [ -d /etc/idekube/startup.bash/ ]; then
 else
     echo "Startup scripts directory /etc/idekube/startup.bash/ not found"
 fi
-
-# ------------------------------------------------------
-# Restart nginx to pick up access_token.conf changes
-# ------------------------------------------------------
-echo "Restarting nginx"
-systemctl restart nginx 2>/dev/null || true
 
 echo "Initialization complete"

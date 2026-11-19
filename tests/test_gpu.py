@@ -12,8 +12,8 @@ import subprocess
 import pytest
 
 from conftest import attach_log, get_branch_params, resolve_and_check
-from helpers.constants import CONTAINER_LABEL, DESKTOP_BRANCHES, PRIVILEGED_BRANCHES
-from helpers.containers import ContainerManager, allocate_port
+from helpers.constants import DESKTOP_BRANCHES, PRIVILEGED_BRANCHES
+from helpers.containers import ContainerManager, allocate_port, container_labels
 
 
 def pytest_generate_tests(metafunc):
@@ -37,7 +37,7 @@ def _get_gpu_container(branch, lineup, container_pool, output_dir, nvidia_runtim
     host_port = allocate_port()
     cmd = [
         "docker", "run", "-d",
-        "--label", f"{CONTAINER_LABEL}=1",
+        *container_labels(),
         "--gpus", "all",
         "-p", f"127.0.0.1:{host_port}:80",
         "-e", "IDEKUBE_INIT_HOME=true",
