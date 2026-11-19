@@ -36,8 +36,8 @@ ARG TZ=Asia/Shanghai \
     WEBSOCAT_VERSION=1.13.0 \
     MINICONDA_VERSION=latest \
     CODER_VERSION=4.7.0 \
-    VIRTUALGL_VERSION=3.1 \
-    TURBOVNC_VERSION=3.1
+    VIRTUALGL_VERSION=3.1.5-20260814 \
+    TURBOVNC_VERSION=3.3.1-20260820
 
 # Avoid prompts for time zone
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -87,7 +87,7 @@ RUN --mount=type=bind,source=docker/base/install-scripts/setup-chromium.sh,targe
 
 # Install TurboVNC and VirtualGL (local script)
 RUN --mount=type=bind,source=docker/base/install-scripts/setup-vnc.sh,target=/tmp/setup-vnc.sh \
-    bash /tmp/setup-vnc.sh
+    export VIRTUALGL_VERSION=${VIRTUALGL_VERSION} TURBOVNC_VERSION=${TURBOVNC_VERSION}; bash /tmp/setup-vnc.sh
 ENV PATH=$PATH:/opt/VirtualGL/bin:/opt/TurboVNC/bin \
     VGL_DISPLAY=egl \
     VNC_THREADS=2 \
