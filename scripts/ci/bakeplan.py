@@ -384,8 +384,8 @@ SMOKE_TARGETS = ("coder-base",)
 
 
 def _under(path: str, prefix: str) -> bool:
-    # A submodule bump shows up as the bare path (images/agent), a file as
-    # images/agent/...; both belong to the prefix.
+    # Matches the directory itself (also how a pre-monorepo submodule bump
+    # appeared: images/agent) and anything below it.
     return path == prefix or path.startswith(prefix + "/")
 
 

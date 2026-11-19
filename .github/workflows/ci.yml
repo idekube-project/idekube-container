@@ -27,25 +27,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          submodules: recursive
 
       # Embedded scripts are shellchecked at warning level and up.
       - name: actionlint
         run: docker run --rm -e SHELLCHECK_OPTS="-S warning" -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color=false
 
       # Error level only: the existing scripts predate these checks.
-      # SC2148 (no shebang) is excluded until the sourced profile.d snippets
-      # in the image submodules carry `# shellcheck shell=` directives.
       - name: shellcheck
         run: |
-          mapfile -t files < <({ git ls-files '*.sh'; git submodule foreach --quiet 'git ls-files "*.sh" | sed "s|^|$sm_path/|"'; } | sort)
+          mapfile -t files < <(git ls-files '*.sh')
           echo "${#files[@]} scripts"
-          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 -S error -e SC2148 "${files[@]}"
+          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 -S error "${files[@]}"
 
       - name: hadolint
         run: |
-          mapfile -t files < <({ git ls-files '*Dockerfile*'; git submodule foreach --quiet 'git ls-files "*Dockerfile*" | sed "s|^|$sm_path/|"'; } | grep -v dockerignore | sort)
+          mapfile -t files < <(git ls-files '*Dockerfile*' | grep -v dockerignore)
           status=0
           for f in "${files[@]}"; do
             echo "::group::$f"
@@ -117,8 +113,6 @@ jobs:
       VERSION: ci
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          submodules: recursive
 
       - uses: ./.github/actions/free-disk-space
 

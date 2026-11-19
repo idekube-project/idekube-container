@@ -1,0 +1,4 @@
+# Sent as the frontend-src named build context; the image builds its own.
+node_modules
+dist
+.DS_Store

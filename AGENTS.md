@@ -6,23 +6,28 @@ This file provides guidance to Codex (codex.com/cli) and other Claude-Code-compa
 
 IDEKUBE is a meta-repository for IDE containers running in Kubernetes. It provides four container flavors (featured, coder, jupyter, agent) used in robotics, ML, simulation, and education at SPEIT (Shanghai Jiao Tong University).
 
-The build system is **centralized**: a single `docker-bake.hcl` at the meta-repo root drives every image. Image submodules under `images/` are stand-alone source trees; bake supplies shared assets (artifacts, healthcheck Go source, frontend Vue source) via BuildKit named contexts so that each Dockerfile only references paths inside its own image repo.
+The build system is **centralized**: a single `docker-bake.hcl` at the meta-repo root drives every image. Everything lives in this one repository. Image directories under `images/` are stand-alone source trees; bake supplies shared assets (artifacts, healthcheck Go source, frontend Vue source) via BuildKit named contexts so that each Dockerfile only references paths inside its own image directory.
 
 ## Repository Layout
 
 - **`docker-bake.hcl`** — Source-of-truth bake configuration: all targets, groups, the dependency DAG (via `target:` named contexts), and per-target build args. Replaces the old `docker-builder/build.py` Python orchestrator.
 - **`docker-bake.staging.hcl`** — Override file. Sets `STAGING_POSTFIX="-staging"` and `VERSION="edge"` (overridable via env). Layered after the main file with `-f`.
-- **`docker-bake.production.hcl`** — Override file for production releases. Adds GHA build cache.
+- **`docker-bake.production.hcl`** — Override file for *local* production builds only (overrides nothing). CI never builds production images; it promotes tested candidates.
 - **`Makefile`** — Thin wrappers around `docker buildx bake` plus the test-suite entry points.
-- **`scripts/tag-stable.sh`** — Post-publish helper that creates stable aliases via `docker buildx imagetools create`.
+- **`scripts/tag-stable.sh`** — Post-promotion helper that creates stable aliases via `docker buildx imagetools create`.
+- **`scripts/ci/bakeplan.py`** — Reads `docker buildx bake --print` so CI never re-implements image naming. `candidate` records the digests a staging build pushed (`candidate.json`); `promote` retags those digests with the release tags. Unit tests: `uv run --project tests pytest scripts/ci/tests`.
+- **`scripts/ci/frontend-hash.sh`** — `FRONTEND_HASH` for builds (`git rev-parse --short HEAD:frontend`).
+- **`scripts/ci-resolve-targets.sh`** — Called by both publish workflows: validates dispatch inputs (passed via `env:`, never `${{ }}`-interpolated into `run:`) and resolves the bake targets for a matrix leg.
 - **`tests/`** — pytest + Playwright test suite (parametrized per branch) for end-to-end verification.
-- **`.github/workflows/publish.yml`** — Staging workflow for PRs, `main` branch pushes, and manual dispatch.
-- **`.github/workflows/publish-production.yml`** — Production workflow for GitHub releases and manual dispatch. Uses `docker/bake-action@v7` with a `[universal, ascend]` job matrix.
-- **`artifacts/`** (submodule) — Shared install scripts and common rootfs overlay. Mounted into builds via `--build-context artifacts=...`.
-- **`frontend/`** (submodule) — Vue 3 + TypeScript + Vite landing page **source**. Built inside the bake-driven Docker stage via `--build-context frontend-src=...`.
-- **`healthcheck/`** (submodule) — Go HTTP health server **source**. Compiled inside the bake-driven Docker stage via `--build-context healthcheck-src=...`.
-- **`qemu-builder/`** — QEMU VM build pipeline (Ansible + cloud-init). Folded into the meta-repo as plain tracked content; no longer a submodule.
-- **`images/<flavor>(-base)?/`** (submodules) — One per image repo. Each is self-contained (Dockerfiles, variant install-scripts, per-flavor rootfs overlay) and only references paths inside its own tree plus named contexts.
+- **`.github/workflows/_build.yml`** — Reusable candidate pipeline (plan → native per-platform builds pushed by digest → merge → tests → `candidate.json`), called by `publish.yml` and the OpenClaw lane.
+- **`.github/workflows/publish.yml`** — Staging (candidate) builds for pushes to `main` (`edge`), prereleases and manual dispatch; attaches `candidate.json` to the release.
+- **`.github/workflows/ci.yml`** — Pull-request gate (`ci-ok`).
+- **`.github/workflows/publish-production.yml`** — Promotes a release's tested candidate by digest on `release: released` (or dispatch). Builds nothing.
+- **`artifacts/`** — Shared install scripts and common rootfs overlay. Mounted into builds via `--build-context artifacts=...`.
+- **`frontend/`** — Vue 3 + TypeScript + Vite landing page **source**. Built inside the bake-driven Docker stage via `--build-context frontend-src=...`.
+- **`healthcheck/`** — Go HTTP health server **source**. Compiled inside the bake-driven Docker stage via `--build-context healthcheck-src=...`.
+- **`qemu-builder/`** — QEMU VM build pipeline (Ansible + cloud-init).
+- **`images/<flavor>(-base)?/`** — One directory per GHCR image repo. Each is self-contained (Dockerfiles, variant install-scripts, per-flavor rootfs overlay) and only references paths inside its own tree plus named contexts.
 
 ## Build Commands
 
@@ -30,7 +35,6 @@ All builds go through bake at the meta-repo root.
 
 ```bash
 # One-time
-make prepare                          # git submodule update --init --recursive
 
 # Local single-arch build (loads into host docker)
 make bake TARGET=featured-base-universal
@@ -43,11 +47,12 @@ make bake-staging GROUP=ascend
 # Multi-arch staging + push (-staging tag postfix)
 make push-staging GROUP=universal
 
-# Multi-arch production + push (release tags)
+# Multi-arch production + push (release tags). Bypasses the CI candidate/test
+# gate: only for recovering from a broken pipeline. Normal releases: see CI/CD.
 make push-production GROUP=universal
 make push-production GROUP=ascend
 
-# After production push: alias <variant>-<version> as <variant>-stable
+# Alias <variant>-<version> as <variant>-stable (CI does this on promotion)
 make tag-stable BRANCH=featured/base
 
 # Inspect the bake plan
@@ -76,12 +81,12 @@ target "featured-speit" {
 
 When bake builds `featured-speit`, it builds `featured-base-universal` first and routes the result through the `base-image` named context. The Dockerfile uses `ARG BASE_IMAGE=base-image` + `FROM ${BASE_IMAGE}` so BuildKit resolves the named context automatically.
 
-## Image-Repo Self-Containment Contract
+## Image-Directory Self-Containment Contract
 
-Every image repo's Dockerfile must reference only:
+Every image directory's Dockerfile must reference only:
 
 1. Paths beneath `docker/<variant>/` (Dockerfile + per-variant install-scripts)
-2. Paths beneath `artifacts/docker/<flavor>/rootfs/` (per-flavor rootfs overlay, lives **inside** the image repo)
+2. Paths beneath `artifacts/docker/<flavor>/rootfs/` (per-flavor rootfs overlay, lives **inside** the image directory)
 3. Named build contexts: `artifacts`, `healthcheck-src`, `frontend-src`, `base-image`
 
 Anything else is a bug. Audit with:
@@ -93,7 +98,7 @@ grep -nH 'third_party\|tools/idekube-healthcheck\|frontend/dist' images/*/docker
 
 ## Container Registry
 
-Per-flavor GHCR repos. Each image submodule publishes to its own repo:
+Per-flavor GHCR repos. Each image directory publishes to its own repo:
 
 | Repo | Variants |
 |------|----------|
@@ -116,13 +121,30 @@ Tag templates: base repos use `<VERSION>[-ascend][-staging]`; application repos 
 
 ## CI/CD
 
-Two workflows under `.github/workflows/`:
+Release images are built once and promoted, never rebuilt: production ships the exact digests the staging run built and tested.
 
-- **Triggers**: `publish.yml` runs staging builds for PRs, `main` branch pushes, and manual dispatch; `publish-production.yml` runs production builds for GitHub releases and manual dispatch.
-- **Matrix**: `lineup: [universal, ascend]` — two runner-job slots.
-- **Auth**: `GITHUB_TOKEN` → GHCR.
-- **Action**: `docker/bake-action@v7` with `files: docker-bake.hcl,<override>`, `push: true`. Bake's BuildKit solver schedules dependency targets first.
-- **Stable retag**: production runs `scripts/tag-stable.sh` for each `*-base` branch after push.
+- **`ci.yml` (pull requests)** — `ci-ok` is the single required check on `main`. It aggregates:
+  - `static`: actionlint, shellcheck (error level), hadolint (error level, `.hadolint.yaml`), every bake file combination resolves, `scripts/ci/tests`, test-suite collection.
+  - `build-test`: one job per universal target the change can affect (`bakeplan.py affected`: files in a target's bake context except other variants' `docker/<variant>/`, plus dependents; `artifacts/`, `healthcheck/`, `frontend/`, `docker-bake.hcl` and `tests/` affect everything; CI plumbing smoke-tests `coder-base`). Builds linux/amd64 with `--load`, runs `nginx -t` in the image, then the test suite for that branch. Dispatch with `targets` to build specific targets.
+
+- **`publish.yml` (staging)** — triggered by pushes to `main` (`VERSION=edge`, `edge-staging` tags; a newer push cancels an older one), `release: prereleased` (`VERSION` = the tag) and manual dispatch (`version` input, which checks that tag out, or the short SHA). It calls **`_build.yml`**:
+  - `plan`: `ci-resolve-targets.sh` per lineup, then `bakeplan.py matrix` → one build job per flavor × lineup × platform (11 for everything): `ubuntu-24.04` for linux/amd64, `ubuntu-24.04-arm` for linux/arm64. No QEMU anywhere. A flavor's base and derived images share a job, so `target:` contexts resolve inside one bake run.
+  - `build`: `bakeplan.py override` writes a bake JSON override (only this platform; published targets push **by digest** with their bare repository as tag; registry cache `<repo>:buildcache-<target>-<arch>`, `mode=max` for bases, `min` for images built FROM another target); `bakeplan.py digests` reads `--metadata-file`.
+  - `merge`: `bakeplan.py merge` `imagetools create`s each target's `-staging` tags from its per-platform digests, checks the platform set against bake, and writes `candidate.json`.
+  - `test`: the suite per image and platform; universal/amd64 legs gate, arm64 and ascend legs run on `ubuntu-24.04-arm` with `continue-on-error` until proven stable. `finalize` writes `tests.status` into `candidate.json`.
+  - Back in `publish.yml`, `publish-candidate` attaches `candidate.json` to the release named after the version (if any) and fails the run unless tests passed.
+- **Build cache** — lives in the already public image repos as `buildcache-*` tags (a new GHCR package would default to private storage). Main, release and dispatch builds write it; PR builds only read it.
+- **`publish-production.yml` (promotion)** — triggered by `release: released` (a prerelease edited into a release, or a release published directly) and manual dispatch (`version`, `targets`, `dry_run`, `force`). Downloads the release's `candidate.json`, checks it was built from the tag's commit, that its tests passed, and that every `-staging` tag still points to the recorded digest, then `imagetools create`s the release tags from those digests (`bakeplan.py promote`). Release tags that already point elsewhere are refused unless `force`; re-running is idempotent.
+- **Stable aliases** — after a full promotion of the version that is `releases/latest`, `scripts/tag-stable.sh` aliases each `*-base` repo's `stable` / `stable-ascend`. Promoting an older release never moves `stable` back.
+- **Auth** — `GITHUB_TOKEN` → GHCR.
+
+### Releasing
+
+1. `gh release create vX.Y.Z --prerelease --generate-notes` with your own gh login (releases created with a workflow's `GITHUB_TOKEN` trigger no workflows).
+2. Wait for **publish-staging** to finish; the release now has `candidate.json`.
+3. `gh release edit vX.Y.Z --prerelease=false --latest` → **publish-production** promotes in minutes.
+
+If step 3 fails because `candidate.json` is missing (e.g. the release was published directly), dispatch publish-staging with `version=vX.Y.Z`, then re-run the failed promotion. Rehearse with a publish-production dispatch and `dry_run: true`.
 
 ### Bake group taxonomy
 
@@ -137,14 +159,23 @@ Two workflows under `.github/workflows/`:
 
 ### Workflow dispatch UX
 
-Both publish workflows accept two `workflow_dispatch` inputs:
+publish-staging accepts these `workflow_dispatch` inputs (publish-production only takes `version`, `targets`, `dry_run`, `force`):
+
+- `version` — release tag to build a candidate for. Empty (default): current ref, versioned by short SHA.
 
 - `lineup` — `universal`, `ascend`, or `both` (default). Used when `targets` is empty.
 - `targets` — bake target or group name. Empty (default) falls back to lineup-driven behavior; non-empty overrides.
+- `skip_base` — boolean (default: false). When true, layers `docker-bake.skip-base.hcl` so derived targets pull a pre-built base image from the registry instead of rebuilding it.
+- `base_tag` — universal base image tag when `skip_base` is enabled (default: `stable`). Examples: `stable`, `v0.8.3`, `edge-staging`.
+- `base_tag_ascend` — ascend base image tag when `skip_base` is enabled. Empty (default) falls back to `<base_tag>-ascend`. Set explicitly when the ascend tag doesn't follow that pattern (e.g. `edge-ascend-staging`).
 
-**Routing rule**: when `targets` is non-empty, exactly **one** runner job runs — the universal leg (the default leg). The job builds whatever the `targets` value resolves to via bake's group expansion. The matrix leg label is just a runner-job slot, not a filter on what bake builds — ascend images can still be produced when the requested group (e.g. `agent-ascend`, `agent-base-all`) contains ascend targets, and they're built via qemu-emulated arm64 on the amd64 runner.
+**Routing rule**: when `targets` is non-empty, `lineup` is ignored and `targets` is resolved once (with the universal rules of `ci-resolve-targets.sh`); the build matrix still splits the result per flavor, lineup and platform, so ascend targets in the requested group (e.g. `agent-ascend`, `agent-base-all`) build natively on arm64 runners.
 
-In production, the `tag-stable` step is skipped when `targets` is set; run `scripts/tag-stable.sh` manually if you need a stable alias from a scoped build.
+**Skip-base mode**: `docker-bake.skip-base.hcl` replaces every `target:` dependency edge with a `docker-image://` registry pull, so bake skips the base-image build entirely. Useful when only a derived target changed (e.g. `agent-openclaw`) and the base is already published. The override sets `STABLE_TAG` / `STABLE_TAG_ASCEND` bake variables from the `base_tag` / `base_tag_ascend` workflow inputs. With `targets` empty, a leg builds `<lineup>-derived` (groups defined in the override) instead of the full lineup, whose base targets would otherwise still be rebuilt and pushed. If `targets` still resolves to a `*-base*` target, the run fails instead of silently rebuilding it.
+
+**Input validation**: `targets` must be comma-separated `[a-z0-9-]` names; `version`, release tags and base tags must match the Docker tag grammar. Actions are pinned to commit SHAs (version in a trailing comment) and kept current by `.github/dependabot.yml`.
+
+Promotion skips the stable aliases when `targets` is set; run `scripts/tag-stable.sh` manually if you need one from a scoped release.
 
 ## Testing
 
@@ -155,7 +186,12 @@ make test_all                         # universal lineup, parallel via pytest-xd
 make test_all_ascend                  # ascend lineup
 ```
 
-`tests/helpers/images.py` resolves locally-built or pushed image refs in the new per-flavor scheme. `LINEUP_BRANCHES`, `BRANCH_REPO`, and `BRANCH_DEPENDS_ON` mirror the bake config.
+`tests/helpers/images.py` resolves locally-built or pushed image refs in the new per-flavor scheme from `VERSION` and `STAGING_POSTFIX` (unset `VERSION` falls back to the newest git tag, so set it). `LINEUP_BRANCHES`, `BRANCH_REPO`, and `BRANCH_DEPENDS_ON` mirror the bake config.
+
+- `--branch` takes one branch or a comma-separated list.
+- Without `--require-images`, branches whose image is missing are **skipped**. CI always passes `--require-images` (or `IDEKUBE_REQUIRE_IMAGES=1`): a missing image aborts the run (exit 3) and a session in which no test passed fails.
+- Run with `-n N --dist loadgroup` so each branch's tests share one worker and one container pool.
+- CI runs the suite through `.github/actions/run-tests` (uv, Playwright Chromium, optional `docker pull`, pytest, logs/screenshots uploaded on failure).
 
 ## Runtime Environment Variables
 
@@ -163,7 +199,8 @@ make test_all_ascend                  # ascend lineup
 - `IDEKUBE_PREFERED_SHELL` — Path to preferred shell
 - `IDEKUBE_USER_UID` — Override container user UID
 - `IDEKUBE_AUTHORIZED_KEYS` — Base64-encoded SSH authorized keys
-- `IDEKUBE_ACCESS_TOKEN` — Nginx-level web auth token (excludes `/ssh`)
+- `IDEKUBE_ACCESS_TOKEN` — Nginx-level web auth token (excludes `/ssh`). Letters, digits, `.`, `_`, `-` only, compared case-sensitively. `/authn.sh` re-renders the nginx map from the read-only template `/etc/idekube/nginx/access_token.conf.template` on every start; an invalid token makes the container exit (fail closed), and the image ships a deny-all map
+- `IDEKUBE_ROOTFS_RESET` — With `I_AM_INIT_CONTAINER`, re-seed an already initialized `/rootfs` volume (otherwise the init container skips it)
 
 ## What's Gone
 
@@ -174,3 +211,4 @@ These were part of the previous decentralized layout and have been removed:
 - Per-image-repo `.github/workflows/publish.yml` (8 of them) — replaced by central meta-repo workflows
 - Per-image-repo `third_party/` symlink farms (replaced by named contexts)
 - `qemu-builder/` submodule (folded into meta-repo as plain content)
+- The `artifacts`, `frontend`, `healthcheck` and `images/*` submodules: folded into this repository with their full history (`git log -- images/agent/...` and `git blame` reach the original commits); the old `idekube-container-*` repos are archived. An existing clone with initialized submodules needs `git submodule deinit -f --all && rm -rf .git/modules` before pulling the change.

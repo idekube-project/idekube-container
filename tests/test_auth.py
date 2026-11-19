@@ -123,9 +123,11 @@ def _render_token(cm, token: str) -> None:
     assert rendered.returncode == 0, f"authn.sh failed: {rendered.stdout}{rendered.stderr}"
     reloaded = cm.exec_run(["nginx", "-s", "reload"])
     assert reloaded.returncode == 0, f"nginx reload failed: {reloaded.stderr}"
-    # Reload is asynchronous: wait until the new token is the one accepted.
-    deadline = time.monotonic() + 10
-    while _status_with_header(cm, token) == 401 and time.monotonic() < deadline:
+    # Reload is asynchronous: wait until the new token is accepted. Workers
+    # restarting can briefly answer 502 or drop the connection, so wait for
+    # 200 rather than for "not 401".
+    deadline = time.monotonic() + 20
+    while _status_with_header(cm, token) != 200 and time.monotonic() < deadline:
         time.sleep(0.2)
 
 

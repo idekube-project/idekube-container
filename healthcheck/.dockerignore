@@ -1,0 +1,2 @@
+# Sent as the healthcheck-src named build context; the image compiles its own.
+idekube-container-healthcheck

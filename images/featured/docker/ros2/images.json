@@ -1,0 +1,4 @@
+{
+  "branch": "featured/ros2",
+  "depends_on": "featured/base"
+}

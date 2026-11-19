@@ -1,10 +1,10 @@
 # IDEKube container build orchestration via docker buildx bake.
 #
-# Source-of-truth for every image in the project. Replaces the per-submodule
-# Makefiles + the old docker-builder Python orchestrator. Image submodules
+# Source-of-truth for every image in the project. Replaces the old per-repo
+# Makefiles + the docker-builder Python orchestrator. Image directories
 # under images/ are stand-alone source trees; bake supplies shared assets
 # (artifacts/, healthcheck/, frontend/) via named build contexts so that
-# each Dockerfile only references paths inside its own repo.
+# each Dockerfile only references paths inside its own directory.
 #
 # Usage:
 #   docker buildx bake universal                 # production build, universal lineup, no push
@@ -21,7 +21,7 @@ variable "REGISTRY"        { default = "ghcr.io" }
 variable "AUTHOR"          { default = "idekube-project" }
 variable "NAME_PREFIX"     { default = "idekube-container" }
 variable "VERSION"         { default = "latest" }   # CI sets from git tag or short sha
-variable "FRONTEND_HASH"  { default = "dev" }        # CI sets from frontend submodule short sha
+variable "FRONTEND_HASH"  { default = "dev" }        # CI: scripts/ci/frontend-hash.sh
 variable "STAGING_POSTFIX" { default = "" }          # "-staging" via docker-bake.staging.hcl
 
 # Build args replacing the old .dockerargs.base file.

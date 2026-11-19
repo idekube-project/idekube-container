@@ -19,7 +19,7 @@ export FRONTEND_HASH
 BAKE_FILES_PRODUCTION := -f docker-bake.hcl -f docker-bake.production.hcl
 BAKE_FILES_STAGING    := -f docker-bake.hcl -f docker-bake.staging.hcl
 
-.PHONY: help prepare buildx-preflight bake bake-staging bake-production push-staging \
+.PHONY: help buildx-preflight bake bake-staging bake-production push-staging \
         push-production discover discover-staging tag-stable test_deps test test_all \
         test_all_ascend qemu-files qemu-images qemu-tools qemu-cloud-localds \
         qemu-prepare qemu-engine qemu-root qemu-build qemu-image qemu-wsl
@@ -28,7 +28,6 @@ help:
 	@echo "IDEKube container build orchestrator"
 	@echo ""
 	@echo "Common targets:"
-	@echo "  make prepare                          Init submodules"
 	@echo "  make buildx-preflight                 Create/use the buildx docker-container builder"
 	@echo "  make bake TARGET=featured-base-universal  Local build (single target, host arch, --load)"
 	@echo "  make bake-staging GROUP=universal         Multi-arch staging build (no push)"
@@ -42,8 +41,6 @@ help:
 	@echo "  make test_all_ascend                  Run tests for the entire ascend lineup"
 	@echo "  make qemu-image BRANCH=featured/base  Build QEMU root disk + runtime image"
 
-prepare:
-	git submodule update --init --recursive
 
 # Ensure multi-platform builds use a buildx builder backed by the docker-container
 # driver. Docker's default "docker" driver cannot build multi-platform images.
