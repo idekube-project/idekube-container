@@ -1,3 +1,7 @@
 .DS_Store
 .cache/
 .codex
+
+# Private keys and certificates must never be committed.
+*.pem
+*.key
