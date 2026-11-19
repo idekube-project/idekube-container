@@ -207,7 +207,12 @@ chown -R "$USER:$USER" "$HOME/.ssh" 2>/dev/null || echo "Warning: Failed to chan
 # ------------------------------------------------------
 # response to IDEKUBE_ACCESS_TOKEN
 # ------------------------------------------------------
-bash /authn.sh
+# authn.sh leaves nginx in deny-all mode when it fails; refuse to start at
+# all so a bad token surfaces as a failed container, not a silent 401 wall.
+if ! bash /authn.sh; then
+    echo "FATAL: access token configuration failed, refusing to start." >&2
+    exit 1
+fi
 
 # ------------------------------------------------------
 # Detect all startup bash scripts and run them
