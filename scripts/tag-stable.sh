@@ -40,7 +40,7 @@ fi
 flavor="${BRANCH%%/*}"
 variant="${BRANCH#*/}"
 
-# Determine which submodule (and therefore which GHCR repo) owns this branch.
+# Determine which GHCR repo owns this branch.
 case "$BRANCH" in
     featured/base) repo="${NAME_PREFIX}-featured-base" ;;
     featured/*)    repo="${NAME_PREFIX}-featured" ;;

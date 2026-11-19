@@ -1,3 +1,4 @@
+# shellcheck shell=sh
 # Make the nvm-installed Node.js (and globally-installed CLIs like
 # claude, opencode) available to interactive login shells.
 #

@@ -1,3 +1,4 @@
+# shellcheck shell=sh
 # Export the agent toolchain environment variables to interactive
 # shells (bash + zsh, login + non-login). The Dockerfile sets these
 # via `ENV` for the entrypoint process tree, but interactive shells

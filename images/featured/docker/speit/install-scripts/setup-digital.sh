@@ -1,3 +1,4 @@
+#!/bin/bash
 echo "Setting Up Digital"
 
 DIGITAL_VERSION=${DIGITAL_VERSION:-latest}

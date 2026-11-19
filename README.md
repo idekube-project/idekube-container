@@ -9,13 +9,12 @@
 [![publish-production](https://github.com/idekube-project/idekube-container/actions/workflows/publish-production.yml/badge.svg)](https://github.com/idekube-project/idekube-container/actions/workflows/publish-production.yml)
 [![GitHub release](https://img.shields.io/github/v/release/idekube-project/idekube-container?display_name=tag&sort=semver)](https://github.com/idekube-project/idekube-container/releases)
 [![GHCR](https://img.shields.io/badge/registry-ghcr.io-2188ff?logo=github)](https://github.com/orgs/idekube-project/packages?repo_name=idekube-container)
-[![Submodules](https://img.shields.io/badge/dependencies-git%20submodules-f05032?logo=git&logoColor=white)](.gitmodules)
 
 **IDEKUBE** runs a fleet of browser-accessible developer environments — JupyterLab, Coder/VS Code, full Linux desktop (XFCE + noVNC), and AI-agent shells (Claude Code, opencode, Hermes) — on your own Kubernetes cluster. A self-hosted alternative to GitHub Codespaces, Gitpod, and Coder Cloud, built for **small engineering teams and research labs** that need per-user dev environments, shared GPUs/NPUs, and on-prem control. 
 
 Runs on NVIDIA GPUs and Huawei Ascend NPUs; field-tested at **Cloud IDE Platform** developed by Shanghai Jiao Tong University Paris Elite Institute of Technology (SPEIT) and the **AI Teaching Practice Platform** developed by the Network & Information Center of Shanghai Jiao Tong University.
 
-This is the **meta-repository** that owns the centralized build system. Image repos under `images/` remain independently versioned submodules but are driven from this repo's `docker-bake.hcl`.
+This repository holds everything: the image sources under `images/`, the shared install scripts and rootfs (`artifacts/`), the landing page (`frontend/`), the health server (`healthcheck/`), the QEMU pipeline, and the centralized build driven by `docker-bake.hcl`.
 
 ## Who it's for
 
@@ -44,25 +43,30 @@ This is the **meta-repository** that owns the centralized build system. Image re
 | ------------------------------- | ---------------------------------------------------- |
 | `docker-bake.hcl`               | All bake targets, groups, dependency DAG, build args |
 | `docker-bake.staging.hcl`       | Staging override (sets `STAGING_POSTFIX="-staging"`) |
-| `docker-bake.production.hcl`    | Production override (GHA cache)                      |
+| `docker-bake.production.hcl`    | Local production override (CI promotes instead)      |
 | `Makefile`                      | Thin wrappers around `docker buildx bake` + tests    |
 | `tests/`                        | pytest + Playwright suite, parametrized per branch   |
-| `.github/workflows/publish.yml` | Staging CI for PRs, `main`, and manual dispatch      |
-| `.github/workflows/publish-production.yml` | Production publish on releases or manual dispatch |
+| `.github/workflows/ci.yml`      | Pull-request gate: static checks + build/test of affected images (`ci-ok`) |
+| `.github/workflows/publish.yml` | Candidate builds + tests for `main` (`edge`), prereleases and dispatch |
+| `.github/workflows/_build.yml`  | Reusable pipeline: native per-platform builds by digest → merge → tests |
+| `.github/workflows/publish-production.yml` | Promotes a release's tested candidate by digest (builds nothing) |
+| `scripts/ci/bakeplan.py`        | CI plans from `bake --print`: affected targets, build matrix, digests, promotion |
 | `scripts/tag-stable.sh`         | Post-publish stable-tag aliasing helper              |
 | `qemu-builder/`                 | QEMU/Ansible nested-VM build pipeline                |
 
-### Submodules
+### Shared sources
 
-| Submodule                      | Repository                                                                                        | Description                                                       |
-| ------------------------------ | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| [`artifacts/`](artifacts/)     | [idekube-container-artifacts](https://github.com/idekube-project/idekube-container-artifacts)     | Shared install scripts and common rootfs overlay                  |
-| [`frontend/`](frontend/)       | [idekube-container-frontend](https://github.com/idekube-project/idekube-container-frontend)       | Vue.js landing page (built inside Docker via named context)       |
-| [`healthcheck/`](healthcheck/) | [idekube-container-healthcheck](https://github.com/idekube-project/idekube-container-healthcheck) | Go health check server (compiled inside Docker via named context) |
+| Directory                      | Description                                                       |
+| ------------------------------ | ----------------------------------------------------------------- |
+| [`artifacts/`](artifacts/)     | Shared install scripts and common rootfs overlay                  |
+| [`frontend/`](frontend/)       | Vue.js landing page (built inside Docker via named context)       |
+| [`healthcheck/`](healthcheck/) | Go health check server (compiled inside Docker via named context) |
 
-### Image submodules
+These, and every `images/*` directory, were separate `idekube-container-*` repositories (git submodules) until 2026-11; their full history now lives here and the old repos are archived.
 
-| Submodule                                        | GHCR repo                         | Variants                                       | Base                             |
+### Images
+
+| Directory                                        | GHCR repo                         | Variants                                       | Base                             |
 | ------------------------------------------------ | --------------------------------- | ---------------------------------------------- | -------------------------------- |
 | [`images/featured-base/`](images/featured-base/) | `idekube-container-featured-base` | `base`                                         | `ubuntu:24.04` / `ascendai/cann` |
 | [`images/featured/`](images/featured/)           | `idekube-container-featured`      | `speit`, `speit-ai`, `dind`, `kathara`, `ros2` | `featured/base`                  |
@@ -102,7 +106,7 @@ All services are reverse-proxied by Nginx on port 80:
 `docker buildx bake` reads `docker-bake.hcl` from the meta-repo root and:
 
 1. Walks the dependency DAG via `target:` named contexts (no separate Python orchestrator).
-2. Sets `--build-context artifacts=./artifacts`, `--build-context healthcheck-src=./healthcheck`, `--build-context frontend-src=./frontend` on every target so each Dockerfile only references its own image-repo tree.
+2. Sets `--build-context artifacts=./artifacts`, `--build-context healthcheck-src=./healthcheck`, `--build-context frontend-src=./frontend` on every target so each Dockerfile only references its own image directory.
 3. For matrix-expanded dual-lineup images, generates `<name>-universal` and `<name>-ascend` variants with the right `BASE_IMAGE` and `platforms`.
 4. Tags base repos as `<VERSION>[-ascend][-staging]` and application repos as `<variant>-<VERSION>[-ascend][-staging]`.
 
@@ -126,13 +130,14 @@ agent/base ──> agent/openclaw
 
 ## Quick start: run an IDEKUBE container in Kubernetes
 
-### Clone with submodules
+### Clone
 
 ```bash
-git clone --recurse-submodules https://github.com/idekube-project/idekube-container.git
+git clone https://github.com/idekube-project/idekube-container.git
 cd idekube-container
-make prepare
 ```
+
+A clone from before 2026-11 still has the old submodules initialized; run `git submodule deinit -f --all && rm -rf .git/modules` once before pulling.
 
 ### Build locally (single arch)
 
@@ -155,32 +160,26 @@ make bake-staging GROUP=universal
 make push-staging GROUP=universal
 ```
 
-### Multi-arch publish (production)
+### Releasing
+
+CI builds each release once and promotes the tested images; production never rebuilds.
 
 ```bash
-# After git tag v1.0.0:
-VERSION=v1.0.0 make push-production GROUP=universal
-VERSION=v1.0.0 make push-production GROUP=ascend
-
-# Then alias base images as stable
-make tag-stable BRANCH=featured/base VERSION=v1.0.0 LINEUP=universal
-make tag-stable BRANCH=coder/base    VERSION=v1.0.0 LINEUP=universal
-make tag-stable BRANCH=jupyter/base  VERSION=v1.0.0 LINEUP=universal
-make tag-stable BRANCH=agent/base    VERSION=v1.0.0 LINEUP=universal
-make tag-stable BRANCH=featured/base VERSION=v1.0.0 LINEUP=ascend
-make tag-stable BRANCH=jupyter/base  VERSION=v1.0.0 LINEUP=ascend
+gh release create v1.0.0 --prerelease --generate-notes   # publish-staging builds + tests the candidate
+# wait for publish-staging; the release gets candidate.json (digests + test result)
+gh release edit v1.0.0 --prerelease=false --latest        # publish-production retags those digests
 ```
 
-In CI, GitHub releases and manual dispatches trigger the production workflow; PRs and pushes to `main` trigger the staging workflow.
+Pull requests run `ci.yml`; pushes to `main` build and test `edge-staging`. `make push-production` and `make tag-stable` still exist for recovering from a broken pipeline, but they bypass the tested-candidate gate. Details: [CLAUDE.md](CLAUDE.md#cicd).
 
 ### Scoping a manual dispatch
 
-Both publish workflows take two `workflow_dispatch` inputs:
+publish-staging takes these `workflow_dispatch` inputs (plus `version`, `skip_base`, `base_tag`):
 
 - `lineup` — `universal`, `ascend`, or `both` (default). Used when `targets` is empty.
 - `targets` — bake target or group name. Empty (default) falls back to `lineup`; non-empty overrides.
 
-When `targets` is set, exactly **one** runner job runs (the universal leg — the default leg) and builds whatever the `targets` value resolves to. The matrix leg label is just the runner slot, not a filter on what's built: a group like `agent-ascend` or `agent-base-all` still produces its ascend images, built via qemu on the amd64 runner.
+When `targets` is set, `lineup` is ignored and the build matrix splits whatever `targets` resolves to per flavor, lineup and platform, each on a native runner: a group like `agent-ascend` or `agent-base-all` still produces its ascend images, built on arm64.
 
 | Want to build… | Pass `targets` = |
 |---|---|
@@ -191,7 +190,7 @@ When `targets` is set, exactly **one** runner job runs (the universal leg — th
 | Whole lineup | `universal`, `ascend` |
 | Everything | leave `targets` empty + `lineup=both` |
 
-Run `make discover GROUP=universal` (or any other group name) to print the bake plan and confirm a group's contents before dispatching. In production, the `tag-stable` step is skipped when `targets` is set; run `scripts/tag-stable.sh` manually if you need a stable alias from a scoped build.
+Run `make discover GROUP=universal` (or any other group name) to print the bake plan and confirm a group's contents before dispatching. Promotion skips the stable aliases when `targets` is set; run `scripts/tag-stable.sh` manually if you need a stable alias from a scoped release.
 
 ### Run a pre-built image
 

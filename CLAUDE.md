@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 IDEKUBE is a meta-repository for IDE containers running in Kubernetes. It provides four container flavors (featured, coder, jupyter, agent) used in robotics, ML, simulation, and education at SPEIT (Shanghai Jiao Tong University).
 
-The build system is **centralized**: a single `docker-bake.hcl` at the meta-repo root drives every image. Image submodules under `images/` are stand-alone source trees; bake supplies shared assets (artifacts, healthcheck Go source, frontend Vue source) via BuildKit named contexts so that each Dockerfile only references paths inside its own image repo.
+The build system is **centralized**: a single `docker-bake.hcl` at the meta-repo root drives every image. Everything lives in this one repository. Image directories under `images/` are stand-alone source trees; bake supplies shared assets (artifacts, healthcheck Go source, frontend Vue source) via BuildKit named contexts so that each Dockerfile only references paths inside its own image directory.
 
 ## Repository Layout
 
@@ -23,11 +23,11 @@ The build system is **centralized**: a single `docker-bake.hcl` at the meta-repo
 - **`.github/workflows/publish.yml`** — Staging (candidate) builds for pushes to `main` (`edge`), prereleases and manual dispatch; attaches `candidate.json` to the release.
 - **`.github/workflows/ci.yml`** — Pull-request gate (`ci-ok`).
 - **`.github/workflows/publish-production.yml`** — Promotes a release's tested candidate by digest on `release: released` (or dispatch). Builds nothing.
-- **`artifacts/`** (submodule) — Shared install scripts and common rootfs overlay. Mounted into builds via `--build-context artifacts=...`.
-- **`frontend/`** (submodule) — Vue 3 + TypeScript + Vite landing page **source**. Built inside the bake-driven Docker stage via `--build-context frontend-src=...`.
-- **`healthcheck/`** (submodule) — Go HTTP health server **source**. Compiled inside the bake-driven Docker stage via `--build-context healthcheck-src=...`.
-- **`qemu-builder/`** — QEMU VM build pipeline (Ansible + cloud-init). Folded into the meta-repo as plain tracked content; no longer a submodule.
-- **`images/<flavor>(-base)?/`** (submodules) — One per image repo. Each is self-contained (Dockerfiles, variant install-scripts, per-flavor rootfs overlay) and only references paths inside its own tree plus named contexts.
+- **`artifacts/`** — Shared install scripts and common rootfs overlay. Mounted into builds via `--build-context artifacts=...`.
+- **`frontend/`** — Vue 3 + TypeScript + Vite landing page **source**. Built inside the bake-driven Docker stage via `--build-context frontend-src=...`.
+- **`healthcheck/`** — Go HTTP health server **source**. Compiled inside the bake-driven Docker stage via `--build-context healthcheck-src=...`.
+- **`qemu-builder/`** — QEMU VM build pipeline (Ansible + cloud-init).
+- **`images/<flavor>(-base)?/`** — One directory per GHCR image repo. Each is self-contained (Dockerfiles, variant install-scripts, per-flavor rootfs overlay) and only references paths inside its own tree plus named contexts.
 
 ## Build Commands
 
@@ -35,7 +35,6 @@ All builds go through bake at the meta-repo root.
 
 ```bash
 # One-time
-make prepare                          # git submodule update --init --recursive
 
 # Local single-arch build (loads into host docker)
 make bake TARGET=featured-base-universal
@@ -82,12 +81,12 @@ target "featured-speit" {
 
 When bake builds `featured-speit`, it builds `featured-base-universal` first and routes the result through the `base-image` named context. The Dockerfile uses `ARG BASE_IMAGE=base-image` + `FROM ${BASE_IMAGE}` so BuildKit resolves the named context automatically.
 
-## Image-Repo Self-Containment Contract
+## Image-Directory Self-Containment Contract
 
-Every image repo's Dockerfile must reference only:
+Every image directory's Dockerfile must reference only:
 
 1. Paths beneath `docker/<variant>/` (Dockerfile + per-variant install-scripts)
-2. Paths beneath `artifacts/docker/<flavor>/rootfs/` (per-flavor rootfs overlay, lives **inside** the image repo)
+2. Paths beneath `artifacts/docker/<flavor>/rootfs/` (per-flavor rootfs overlay, lives **inside** the image directory)
 3. Named build contexts: `artifacts`, `healthcheck-src`, `frontend-src`, `base-image`
 
 Anything else is a bug. Audit with:
@@ -99,7 +98,7 @@ grep -nH 'third_party\|tools/idekube-healthcheck\|frontend/dist' images/*/docker
 
 ## Container Registry
 
-Per-flavor GHCR repos. Each image submodule publishes to its own repo:
+Per-flavor GHCR repos. Each image directory publishes to its own repo:
 
 | Repo | Variants |
 |------|----------|
@@ -212,3 +211,4 @@ These were part of the previous decentralized layout and have been removed:
 - Per-image-repo `.github/workflows/publish.yml` (8 of them) — replaced by central meta-repo workflows
 - Per-image-repo `third_party/` symlink farms (replaced by named contexts)
 - `qemu-builder/` submodule (folded into meta-repo as plain content)
+- The `artifacts`, `frontend`, `healthcheck` and `images/*` submodules: folded into this repository with their full history (`git log -- images/agent/...` and `git blame` reach the original commits); the old `idekube-container-*` repos are archived. An existing clone with initialized submodules needs `git submodule deinit -f --all && rm -rf .git/modules` before pulling the change.
