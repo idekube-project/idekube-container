@@ -3,7 +3,15 @@ server {
     listen [::]:80;
     client_max_body_size 0;
 
-    set $__idekube_original_uri $uri;
+    # TLS terminates at the ingress, so $scheme here is always "http".
+    # Emit relative Location headers and let the browser resolve them
+    # against the page URL; absolute ones would downgrade HTTPS to HTTP.
+    absolute_redirect off;
+
+    # Log format without the query string (see conf.d/idekube-common.conf):
+    # token links would otherwise write the access token to disk.
+    access_log /var/log/nginx/access.log idekube_redacted;
+
     if ($__idekube_token_arg_ok = 1) {
         rewrite ^ /_idekube_set_cookie last;
     }
@@ -15,13 +23,20 @@ server {
         root /usr/share/nginx/html;
     }
     location @fallback_to_home {
-        return 302 $scheme://$http_host/;
+        return 302 /;
+    }
+
+    # The landing page ships no favicon. Answer the browser's automatic
+    # probe directly instead of routing it through the 404 fallback.
+    location = /favicon.ico {
+        access_log off;
+        return 204;
     }
 
     location = /_idekube_set_cookie {
         internal;
-        add_header Set-Cookie "idekube_container_access_token=$__idekube_token_from_arg; Path=/; Max-Age=86400; SameSite=Lax";
-        return 302 $scheme://$http_host$__idekube_original_uri?;
+        add_header Set-Cookie "idekube_container_access_token=$__idekube_token_from_arg; Path=/; Max-Age=86400; SameSite=Lax; HttpOnly$__idekube_cookie_secure";
+        return 302 $__idekube_redirect_path?;
     }
 
     location = /_idekube_auth {
