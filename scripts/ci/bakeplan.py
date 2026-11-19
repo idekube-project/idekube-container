@@ -300,6 +300,9 @@ def bake_override(plan: dict[str, Any], *, platform: str, output: str, cache: st
     into the local docker engine. cache "readwrite" | "read" | "none":
     registry cache at <repo>:buildcache-<target>-<arch>; bases export all
     stages (mode=max), images built FROM another target only their own.
+    A failed cache export never fails the build (ignore-error): BuildKit
+    can lose the registry session while copying lazily pulled base layers
+    into the cache ("no active session ... context deadline exceeded").
     """
     if platform not in RUNNERS:
         raise PlanError(f"unsupported platform {platform!r}")
@@ -318,7 +321,9 @@ def bake_override(plan: dict[str, Any], *, platform: str, output: str, cache: st
             entry["cache-from"] = [f"type=registry,ref={ref}"]
             if cache == "readwrite":
                 mode = "min" if deps.get(name) else "max"
-                entry["cache-to"] = [f"type=registry,ref={ref},mode={mode},image-manifest=true,oci-mediatypes=true"]
+                entry["cache-to"] = [
+                    f"type=registry,ref={ref},mode={mode},image-manifest=true,oci-mediatypes=true,ignore-error=true"
+                ]
         if name in published and output == "digest":
             if not repo:
                 raise PlanError(f"{name} has no tags to derive its repository from")
