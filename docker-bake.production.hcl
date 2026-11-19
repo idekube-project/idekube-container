@@ -1,12 +1,11 @@
-# Production override file. Layered after docker-bake.hcl:
+# Production override file. Layered after docker-bake.hcl for local builds:
 #   docker buildx bake -f docker-bake.hcl -f docker-bake.production.hcl <group> --push
 #
-# Triggered by tag pushes (v*) in CI. The "stable" tag aliases are not added
-# here; they're applied as a post-build step via scripts/tag-stable.sh which
-# uses `docker buildx imagetools create` against already-pushed manifests.
-
-# Enable GitHub Actions cache for production runs to speed up rebuilds.
-target "_common" {
-  cache-from = ["type=gha"]
-  cache-to   = ["type=gha,mode=max"]
-}
+# CI never builds production images. publish-staging builds and tests a
+# candidate ("-staging" tags), and publish-production promotes those exact
+# digests to the release tags (scripts/ci/bakeplan.py promote). A local
+# `make push-production` bypasses that gate: use it only to recover from a
+# broken pipeline.
+#
+# Release tags come from docker-bake.hcl alone (STAGING_POSTFIX empty), so
+# this file intentionally overrides nothing.

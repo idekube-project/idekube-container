@@ -1,10 +1,21 @@
 name: publish-staging
 
+# Builds release candidates. Every image is pushed with the "-staging"
+# postfix, and the digests that were pushed are recorded in candidate.json.
+# For a release (prerelease event, or dispatch with `version`), candidate.json
+# is attached to the GitHub release; publish-production.yml later promotes
+# exactly those digests instead of rebuilding.
+
 on:
   release:
     types: [prereleased]
   workflow_dispatch:
     inputs:
+      version:
+        description: "Release tag to build a candidate for (checks the tag out; candidate.json is attached to its release). Empty = current ref, versioned by short SHA."
+        required: false
+        type: string
+        default: ""
       lineup:
         description: "universal, ascend, or both"
         required: false
@@ -32,6 +43,12 @@ on:
         type: string
         default: ""
 
+# One candidate build per release version at a time; SHA-versioned dispatch
+# builds do not share state and may run in parallel.
+concurrency:
+  group: publish-staging-${{ github.event.release.tag_name || inputs.version || github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: ${{ matrix.lineup }}
@@ -46,6 +63,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          # Empty on release events: the event's tag is checked out.
+          ref: ${{ inputs.version }}
           submodules: recursive
           fetch-depth: 0
 
@@ -97,11 +116,14 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           if [[ "$EVENT_NAME" == "release" ]]; then
             VERSION="$RELEASE_TAG"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="$INPUT_VERSION"
           else
-            VERSION="${GITHUB_SHA::7}"
+            VERSION="$(git rev-parse --short=7 HEAD)"
           fi
 
           # Docker tag grammar; also keeps odd release/tag names out of bake.
@@ -109,7 +131,7 @@ jobs:
             echo "::error::VERSION '$VERSION' is not a valid image tag." >&2
             exit 1
           fi
-          FRONTEND_HASH="$(git -C frontend rev-parse --short HEAD)"
+          FRONTEND_HASH="$(./scripts/ci/frontend-hash.sh)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "frontend_hash=$FRONTEND_HASH" >> "$GITHUB_OUTPUT"
           echo "Version=$VERSION  Frontend=$FRONTEND_HASH"
@@ -129,3 +151,84 @@ jobs:
             ${{ github.event.inputs.skip_base == 'true' && 'docker-bake.skip-base.hcl' || '' }}
           targets: ${{ steps.plan.outputs.targets }}
           push: true
+
+      # Matrix job outputs keep only one leg's values, so each leg hands what
+      # it built to the candidate job as an artifact.
+      - name: Record what this leg built
+        if: env.SKIP != '1'
+        env:
+          LINEUP: ${{ matrix.lineup }}
+          VERSION: ${{ steps.vars.outputs.version }}
+          TARGETS: ${{ steps.plan.outputs.targets }}
+          SKIP_BASE: ${{ github.event.inputs.skip_base == 'true' }}
+        run: |
+          jq -n --arg version "$VERSION" --arg targets "$TARGETS" --arg skip_base "$SKIP_BASE" \
+            --arg sha "$(git rev-parse HEAD)" \
+            '{version: $version, targets: $targets, skip_base: ($skip_base == "true"), sha: $sha}' \
+            > "plan-${LINEUP}.json"
+          cat "plan-${LINEUP}.json"
+
+      - name: Upload leg plan
+        if: env.SKIP != '1'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plan-${{ matrix.lineup }}
+          path: plan-${{ matrix.lineup }}.json
+          retention-days: 7
+
+  # Runs only when every leg succeeded: a partial build is never a candidate.
+  candidate:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # attach candidate.json to the release
+      packages: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Setup Docker build environment
+        uses: ./.github/actions/setup-docker-buildx
+        with:
+          login: true
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: plan-*
+          merge-multiple: true
+
+      - name: Record candidate digests
+        id: candidate
+        env:
+          CANDIDATE_SOURCE: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          version=$(jq -rs 'map(.version) | unique | if length == 1 then .[0] else error("legs disagree on version") end' plan-*.json)
+          sha=$(jq -rs 'map(.sha) | unique | if length == 1 then .[0] else error("legs disagree on commit") end' plan-*.json)
+          skip_base=$(jq -rs 'map(.skip_base) | unique | if length == 1 then .[0] else error("legs disagree on skip_base") end' plan-*.json)
+          targets=$(jq -rs 'map(.targets | split(",")) | add | unique | join(",")' plan-*.json)
+          [[ "$sha" == "$(git rev-parse HEAD)" ]] || { echo "::error::legs built $sha, checkout is $(git rev-parse HEAD)"; exit 1; }
+          args=(candidate --version "$version" --sha "$sha" --targets "$targets" --out candidate.json)
+          [[ "$skip_base" == true ]] && args+=(--skip-base)
+          ./scripts/ci/bakeplan.py "${args[@]}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: candidate
+          path: candidate.json
+
+      - name: Attach candidate.json to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.candidate.outputs.version }}
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" candidate.json --clobber
+            echo "Attached candidate.json to release $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No release named $VERSION; candidate.json is only a workflow artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -12,13 +12,15 @@ The build system is **centralized**: a single `docker-bake.hcl` at the meta-repo
 
 - **`docker-bake.hcl`** — Source-of-truth bake configuration: all targets, groups, the dependency DAG (via `target:` named contexts), and per-target build args. Replaces the old `docker-builder/build.py` Python orchestrator.
 - **`docker-bake.staging.hcl`** — Override file. Sets `STAGING_POSTFIX="-staging"` and `VERSION="edge"` (overridable via env). Layered after the main file with `-f`.
-- **`docker-bake.production.hcl`** — Override file for production releases. Adds GHA build cache.
+- **`docker-bake.production.hcl`** — Override file for *local* production builds only (overrides nothing). CI never builds production images; it promotes tested candidates.
 - **`Makefile`** — Thin wrappers around `docker buildx bake` plus the test-suite entry points.
-- **`scripts/tag-stable.sh`** — Post-publish helper that creates stable aliases via `docker buildx imagetools create`.
+- **`scripts/tag-stable.sh`** — Post-promotion helper that creates stable aliases via `docker buildx imagetools create`.
+- **`scripts/ci/bakeplan.py`** — Reads `docker buildx bake --print` so CI never re-implements image naming. `candidate` records the digests a staging build pushed (`candidate.json`); `promote` retags those digests with the release tags. Unit tests: `uv run --project tests pytest scripts/ci/tests`.
+- **`scripts/ci/frontend-hash.sh`** — `FRONTEND_HASH` for builds (`git rev-parse --short HEAD:frontend`).
 - **`scripts/ci-resolve-targets.sh`** — Called by both publish workflows: validates dispatch inputs (passed via `env:`, never `${{ }}`-interpolated into `run:`) and resolves the bake targets for a matrix leg.
 - **`tests/`** — pytest + Playwright test suite (parametrized per branch) for end-to-end verification.
-- **`.github/workflows/publish.yml`** — Staging workflow for PRs, `main` branch pushes, and manual dispatch.
-- **`.github/workflows/publish-production.yml`** — Production workflow for GitHub releases and manual dispatch. Uses `docker/bake-action@v7` with a `[universal, ascend]` job matrix.
+- **`.github/workflows/publish.yml`** — Staging (candidate) builds for prereleases and manual dispatch; writes `candidate.json`.
+- **`.github/workflows/publish-production.yml`** — Promotes a release's tested candidate by digest on `release: released` (or dispatch). Builds nothing.
 - **`artifacts/`** (submodule) — Shared install scripts and common rootfs overlay. Mounted into builds via `--build-context artifacts=...`.
 - **`frontend/`** (submodule) — Vue 3 + TypeScript + Vite landing page **source**. Built inside the bake-driven Docker stage via `--build-context frontend-src=...`.
 - **`healthcheck/`** (submodule) — Go HTTP health server **source**. Compiled inside the bake-driven Docker stage via `--build-context healthcheck-src=...`.
@@ -44,11 +46,12 @@ make bake-staging GROUP=ascend
 # Multi-arch staging + push (-staging tag postfix)
 make push-staging GROUP=universal
 
-# Multi-arch production + push (release tags)
+# Multi-arch production + push (release tags). Bypasses the CI candidate/test
+# gate: only for recovering from a broken pipeline. Normal releases: see CI/CD.
 make push-production GROUP=universal
 make push-production GROUP=ascend
 
-# After production push: alias <variant>-<version> as <variant>-stable
+# Alias <variant>-<version> as <variant>-stable (CI does this on promotion)
 make tag-stable BRANCH=featured/base
 
 # Inspect the bake plan
@@ -117,13 +120,20 @@ Tag templates: base repos use `<VERSION>[-ascend][-staging]`; application repos 
 
 ## CI/CD
 
-Two workflows under `.github/workflows/`:
+Release images are built once and promoted, never rebuilt: production ships the exact digests the staging run built (and, once wired in, tested).
 
-- **Triggers**: `publish.yml` runs staging builds for PRs, `main` branch pushes, and manual dispatch; `publish-production.yml` runs production builds for GitHub releases and manual dispatch.
-- **Matrix**: `lineup: [universal, ascend]` — two runner-job slots.
-- **Auth**: `GITHUB_TOKEN` → GHCR.
-- **Action**: `docker/bake-action@v7` with `files: docker-bake.hcl,<override>`, `push: true`. Bake's BuildKit solver schedules dependency targets first.
-- **Stable retag**: production runs `scripts/tag-stable.sh` for each `*-base` branch after push.
+- **`publish.yml` (staging)** — triggered by `release: prereleased` and manual dispatch. Builds with the `-staging` tag postfix (`docker/bake-action`, `[universal, ascend]` job matrix), then a `candidate` job records every pushed digest in `candidate.json` (`scripts/ci/bakeplan.py candidate`). When a release named after the version exists, `candidate.json` is attached to it. `VERSION` is the release tag, the dispatch `version` input (which also checks that tag out), or the short SHA.
+- **`publish-production.yml` (promotion)** — triggered by `release: released` (a prerelease edited into a release, or a release published directly) and manual dispatch (`version`, `targets`, `dry_run`, `force`). Downloads the release's `candidate.json`, checks it was built from the tag's commit, that its tests passed, and that every `-staging` tag still points to the recorded digest, then `imagetools create`s the release tags from those digests (`bakeplan.py promote`). Release tags that already point elsewhere are refused unless `force`; re-running is idempotent.
+- **Stable aliases** — after a full promotion of the version that is `releases/latest`, `scripts/tag-stable.sh` aliases each `*-base` repo's `stable` / `stable-ascend`. Promoting an older release never moves `stable` back.
+- **Auth** — `GITHUB_TOKEN` → GHCR.
+
+### Releasing
+
+1. `gh release create vX.Y.Z --prerelease --generate-notes` with your own gh login (releases created with a workflow's `GITHUB_TOKEN` trigger no workflows).
+2. Wait for **publish-staging** to finish; the release now has `candidate.json`.
+3. `gh release edit vX.Y.Z --prerelease=false --latest` → **publish-production** promotes in minutes.
+
+If step 3 fails because `candidate.json` is missing (e.g. the release was published directly), dispatch publish-staging with `version=vX.Y.Z`, then re-run the failed promotion. Rehearse with a publish-production dispatch and `dry_run: true`.
 
 ### Bake group taxonomy
 
@@ -138,7 +148,9 @@ Two workflows under `.github/workflows/`:
 
 ### Workflow dispatch UX
 
-Both publish workflows accept these `workflow_dispatch` inputs:
+publish-staging accepts these `workflow_dispatch` inputs (publish-production only takes `version`, `targets`, `dry_run`, `force`):
+
+- `version` — release tag to build a candidate for. Empty (default): current ref, versioned by short SHA.
 
 - `lineup` — `universal`, `ascend`, or `both` (default). Used when `targets` is empty.
 - `targets` — bake target or group name. Empty (default) falls back to lineup-driven behavior; non-empty overrides.
@@ -152,7 +164,7 @@ Both publish workflows accept these `workflow_dispatch` inputs:
 
 **Input validation**: `targets` must be comma-separated `[a-z0-9-]` names; `version`, release tags and base tags must match the Docker tag grammar. Actions are pinned to commit SHAs (version in a trailing comment) and kept current by `.github/dependabot.yml`.
 
-In production, the `tag-stable` step is skipped when `targets` is set; run `scripts/tag-stable.sh` manually if you need a stable alias from a scoped build.
+Promotion skips the stable aliases when `targets` is set; run `scripts/tag-stable.sh` manually if you need one from a scoped release.
 
 ## Testing
 
