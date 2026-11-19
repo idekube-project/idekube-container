@@ -333,7 +333,9 @@ def test_override_pushes_published_targets_by_digest_to_their_repo():
     ref = "ghcr.io/idekube-project/idekube-container-coder:buildcache-coder-conda-arm64"
     assert conda["cache-from"] == [f"type=registry,ref={ref}"]
     # FROM another target: own layers only.
-    assert conda["cache-to"] == [f"type=registry,ref={ref},mode=min,image-manifest=true,oci-mediatypes=true"]
+    assert conda["cache-to"] == [
+        f"type=registry,ref={ref},mode=min,image-manifest=true,oci-mediatypes=true,ignore-error=true"
+    ]
     assert "mode=max" in doc["coder-base"]["cache-to"][0]
 
 
