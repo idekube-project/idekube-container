@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 import subprocess
 from pathlib import Path
 
@@ -65,7 +66,14 @@ def pytest_addoption(parser):
     parser.addoption(
         "--branch",
         default="",
-        help="Restrict tests to a single branch (e.g. featured/base). Empty = all branches.",
+        help="Restrict tests to these branches, comma-separated (e.g. featured/base,coder/base). Empty = all branches.",
+    )
+    parser.addoption(
+        "--require-images",
+        action="store_true",
+        default=os.environ.get("IDEKUBE_REQUIRE_IMAGES", "") not in ("", "0", "false"),
+        help="Fail instead of skipping when a selected branch's image is missing, and fail when no test passed "
+        "(CI: a run that tested nothing must not look green). Also enabled by IDEKUBE_REQUIRE_IMAGES=1.",
     )
     parser.addoption(
         "--output-dir",
@@ -117,6 +125,33 @@ def pytest_sessionstart(session):
     """
     if not hasattr(session.config, "workerinput"):
         cleanup_stale_containers()
+        _require_images(session.config)
+
+
+def _require_images(config) -> None:
+    """With --require-images, stop before running anything if an image is missing."""
+    if not config.getoption("--require-images"):
+        return
+    lineup = config.getoption("--lineup")
+    missing = [
+        ref
+        for ref in (resolve_image_ref(branch, lineup) for branch in _filtered_branches(config))
+        if not is_image_available(ref)
+    ]
+    if missing:
+        pytest.exit("--require-images: images not present locally:\n  " + "\n  ".join(missing), returncode=3)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """With --require-images, a session in which no test passed is a failure."""
+    config = session.config
+    if hasattr(config, "workerinput") or not config.getoption("--require-images"):
+        return
+    reporter = config.pluginmanager.get_plugin("terminalreporter")
+    passed = len(reporter.stats.get("passed", [])) if reporter else 0
+    if passed == 0 and exitstatus == 0:
+        logger.error("--require-images: no test passed")
+        session.exitstatus = 1
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -180,15 +215,16 @@ def get_or_start_container(
 def _filtered_branches(config) -> list[str]:
     """Return branches to test, honoring the --branch filter if set."""
     lineup = config.getoption("--lineup")
-    branch_filter = config.getoption("--branch")
+    wanted = [b for b in config.getoption("--branch").split(",") if b]
     branches = get_lineup_branches(lineup)
-    if branch_filter:
-        if branch_filter not in branches:
+    if wanted:
+        unknown = [b for b in wanted if b not in branches]
+        if unknown:
             raise ValueError(
-                f"Branch '{branch_filter}' is not in lineup '{lineup}'. "
+                f"Branch(es) {unknown} not in lineup '{lineup}'. "
                 f"Available: {branches}"
             )
-        branches = [branch_filter]
+        branches = [b for b in branches if b in wanted]
     return branches
 
 

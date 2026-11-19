@@ -1,0 +1,18 @@
+name: free-disk-space
+description: >-
+  Delete preinstalled toolchains the image builds never use (Android SDK,
+  .NET, GHC, CodeQL, ...), so multi-GB images and their build cache fit on a
+  hosted runner. Missing directories are ignored (images differ by arch).
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        echo "before: $(df -h / | awk 'NR==2 {print $4}') free"
+        sudo rm -rf \
+          /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+          /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/boost \
+          /usr/local/share/powershell /opt/microsoft /opt/google /usr/local/julia* \
+          || true
+        docker image prune --all --force >/dev/null 2>&1 || true
+        echo "after: $(df -h / | awk 'NR==2 {print $4}') free"

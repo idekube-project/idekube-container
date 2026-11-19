@@ -222,3 +222,75 @@ def test_promotion_rejects_release_tag_in_another_repo():
         inspect=staging_registry(),
     )
     assert any("is not in" in p for p in problems)
+
+
+# --- branches, affected, test matrix -------------------------------------------
+
+UNIVERSAL = json.loads((HERE / "fixtures" / "plan-universal.json").read_text())
+ALL_UNIVERSAL = sorted(bakeplan.published_targets(UNIVERSAL))
+
+
+@pytest.mark.parametrize(
+    "name,branch",
+    [
+        ("featured-base-universal", "featured/base"),
+        ("featured-speit-ai-universal", "featured/speit-ai"),
+        ("coder-conda", "coder/conda"),
+        ("agent-hermes", "agent/hermes"),
+    ],
+)
+def test_target_branch(name, branch):
+    assert bakeplan.target_branch(UNIVERSAL["target"][name]) == branch
+
+
+def test_candidate_records_branch_and_lineup():
+    doc = bakeplan.build_candidate(STAGING, version="v1.2.3", sha=SHA, inspect=staging_registry(), now="t")
+    assert doc["images"]["agent-openclaw-ascend"]["branch"] == "agent/openclaw"
+    assert doc["images"]["agent-openclaw-ascend"]["lineup"] == "ascend"
+    assert doc["images"]["coder-conda"]["lineup"] == "universal"
+
+
+@pytest.mark.parametrize(
+    "changed,expected",
+    [
+        (["README.md", "qemu-builder/run.sh"], []),
+        (["tests/conftest.py"], ALL_UNIVERSAL),
+        (["artifacts"], ALL_UNIVERSAL),  # submodule bump
+        (["docker-bake.hcl"], ALL_UNIVERSAL),
+        (["images/agent"], ["agent-hermes", "agent-openclaw-universal"]),
+        (["images/featured/docker/speit/Dockerfile"], ["featured-speit"]),
+        (["images/featured/docker/dind/setup.sh"], ["featured-dind", "featured-kathara"]),
+        (
+            ["images/featured/artifacts/x"],
+            ["featured-dind", "featured-kathara", "featured-ros2", "featured-speit", "featured-speit-ai-universal"],
+        ),
+        (["images/coder-base/docker/base/Dockerfile"], ["coder-base", "coder-conda"]),
+        ([".github/workflows/ci.yml"], ["coder-base"]),
+        (["images/agent-basement/x"], []),  # prefix match must respect path segments
+    ],
+)
+def test_affected_targets(changed, expected):
+    assert bakeplan.affected_targets(UNIVERSAL, changed) == sorted(expected)
+
+
+def test_test_matrix_blocks_only_on_universal_amd64():
+    doc = passed_candidate()
+    legs = bakeplan.test_matrix(doc)
+    blocking = {(leg["target"], leg["arch"]) for leg in legs if leg["blocking"]}
+    assert blocking == {
+        ("agent-openclaw-universal", "amd64"),
+        ("coder-base", "amd64"),
+        ("coder-conda", "amd64"),
+    }
+    arm = [leg for leg in legs if leg["arch"] == "arm64"]
+    assert arm and all(leg["runner"] == "ubuntu-24.04-arm" for leg in arm)
+    assert {leg["lineup"] for leg in legs if leg["target"] == "agent-openclaw-ascend"} == {"ascend"}
+
+
+def test_set_tests_marks_candidate(tmp_path, monkeypatch):
+    path = tmp_path / "candidate.json"
+    path.write_text(json.dumps(passed_candidate()))
+    monkeypatch.setenv("CANDIDATE_SOURCE", "https://example/run/1")
+    assert bakeplan.main(["set-tests", "--candidate", str(path), "--status", "failed"]) == 0
+    doc = json.loads(path.read_text())
+    assert doc["tests"] == {"status": "failed", "run": "https://example/run/1"}

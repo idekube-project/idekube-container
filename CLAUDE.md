@@ -120,9 +120,13 @@ Tag templates: base repos use `<VERSION>[-ascend][-staging]`; application repos 
 
 ## CI/CD
 
-Release images are built once and promoted, never rebuilt: production ships the exact digests the staging run built (and, once wired in, tested).
+Release images are built once and promoted, never rebuilt: production ships the exact digests the staging run built and tested.
 
-- **`publish.yml` (staging)** — triggered by `release: prereleased` and manual dispatch. Builds with the `-staging` tag postfix (`docker/bake-action`, `[universal, ascend]` job matrix), then a `candidate` job records every pushed digest in `candidate.json` (`scripts/ci/bakeplan.py candidate`). When a release named after the version exists, `candidate.json` is attached to it. `VERSION` is the release tag, the dispatch `version` input (which also checks that tag out), or the short SHA.
+- **`ci.yml` (pull requests)** — `ci-ok` is the single required check on `main`. It aggregates:
+  - `static`: actionlint, shellcheck (error level), hadolint (error level, `.hadolint.yaml`), every bake file combination resolves, `scripts/ci/tests`, test-suite collection.
+  - `build-test`: one job per universal target the change can affect (`bakeplan.py affected`: files in a target's bake context except other variants' `docker/<variant>/`, plus dependents; `artifacts/`, `healthcheck/`, `frontend/`, `docker-bake.hcl` and `tests/` affect everything; CI plumbing smoke-tests `coder-base`). Builds linux/amd64 with `--load`, runs `nginx -t` in the image, then the test suite for that branch. Dispatch with `targets` to build specific targets.
+
+- **`publish.yml` (staging)** — triggered by `release: prereleased` and manual dispatch. Builds with the `-staging` tag postfix (`docker/bake-action`, `[universal, ascend]` job matrix), then a `candidate` job records every pushed digest in `candidate.json` (`scripts/ci/bakeplan.py candidate`). `test` runs the suite against the pushed candidates, one job per image and platform: universal/amd64 legs gate, arm64 (universal) and ascend legs run on native `ubuntu-24.04-arm` runners with `continue-on-error` until proven stable. `finalize` writes `tests.status` (`passed`/`failed`) into `candidate.json`. When a release named after the version exists, `candidate.json` is attached to it (and replaced by `finalize`). `VERSION` is the release tag, the dispatch `version` input (which also checks that tag out), or the short SHA.
 - **`publish-production.yml` (promotion)** — triggered by `release: released` (a prerelease edited into a release, or a release published directly) and manual dispatch (`version`, `targets`, `dry_run`, `force`). Downloads the release's `candidate.json`, checks it was built from the tag's commit, that its tests passed, and that every `-staging` tag still points to the recorded digest, then `imagetools create`s the release tags from those digests (`bakeplan.py promote`). Release tags that already point elsewhere are refused unless `force`; re-running is idempotent.
 - **Stable aliases** — after a full promotion of the version that is `releases/latest`, `scripts/tag-stable.sh` aliases each `*-base` repo's `stable` / `stable-ascend`. Promoting an older release never moves `stable` back.
 - **Auth** — `GITHUB_TOKEN` → GHCR.
@@ -175,7 +179,12 @@ make test_all                         # universal lineup, parallel via pytest-xd
 make test_all_ascend                  # ascend lineup
 ```
 
-`tests/helpers/images.py` resolves locally-built or pushed image refs in the new per-flavor scheme. `LINEUP_BRANCHES`, `BRANCH_REPO`, and `BRANCH_DEPENDS_ON` mirror the bake config.
+`tests/helpers/images.py` resolves locally-built or pushed image refs in the new per-flavor scheme from `VERSION` and `STAGING_POSTFIX` (unset `VERSION` falls back to the newest git tag, so set it). `LINEUP_BRANCHES`, `BRANCH_REPO`, and `BRANCH_DEPENDS_ON` mirror the bake config.
+
+- `--branch` takes one branch or a comma-separated list.
+- Without `--require-images`, branches whose image is missing are **skipped**. CI always passes `--require-images` (or `IDEKUBE_REQUIRE_IMAGES=1`): a missing image aborts the run (exit 3) and a session in which no test passed fails.
+- Run with `-n N --dist loadgroup` so each branch's tests share one worker and one container pool.
+- CI runs the suite through `.github/actions/run-tests` (uv, Playwright Chromium, optional `docker pull`, pytest, logs/screenshots uploaded on failure).
 
 ## Runtime Environment Variables
 

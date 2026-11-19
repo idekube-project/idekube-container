@@ -6,8 +6,11 @@ pipelines need about targets, tags and repos is read back from bake, so the
 workflows never re-implement the naming scheme.
 
 Subcommands:
-  candidate  Record the digests a staging build pushed (candidate.json).
-  promote    Retag a tested candidate's digests with the release tags.
+  affected     Targets a change touches (PR CI build/test matrix).
+  candidate    Record the digests a staging build pushed (candidate.json).
+  test-matrix  Test jobs for a candidate (one per image and platform).
+  set-tests    Record the test outcome in candidate.json.
+  promote      Retag a tested candidate's digests with the release tags.
 
 A candidate document (schema 1) looks like:
 
@@ -20,6 +23,8 @@ A candidate document (schema 1) looks like:
     "tests": {"status": "pending" | "passed" | "failed", ...},
     "images": {
       "<bake target>": {
+        "branch": "coder/base",
+        "lineup": "universal",
         "repo": "ghcr.io/idekube-project/idekube-container-coder-base",
         "digest": "sha256:...",
         "candidate_tags": ["...:v0.9.0-staging"],
@@ -116,6 +121,33 @@ def published_targets(plan: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return out
 
 
+def target_branch(target: dict[str, Any]) -> str:
+    """Test-suite branch of a bake target: images/featured + docker/speit/Dockerfile -> featured/speit."""
+    context = target.get("context") or ""
+    dockerfile = target.get("dockerfile") or ""
+    parts = Path(dockerfile).parts
+    if not context.startswith("images/") or len(parts) < 3 or parts[0] != "docker":
+        raise PlanError(f"cannot derive a branch from context={context!r} dockerfile={dockerfile!r}")
+    flavor = Path(context).name.removesuffix("-base")
+    return f"{flavor}/{parts[1]}"
+
+
+def target_lineup(name: str) -> str:
+    return "ascend" if name.endswith("-ascend") else "universal"
+
+
+def base_dependencies(plan: dict[str, Any]) -> dict[str, list[str]]:
+    """target -> targets it builds FROM (bake `target:` contexts)."""
+    deps = {}
+    for name, target in plan.get("target", {}).items():
+        deps[name] = sorted(
+            v.removeprefix("target:")
+            for v in (target.get("contexts") or {}).values()
+            if isinstance(v, str) and v.startswith("target:")
+        )
+    return deps
+
+
 def check_version(version: str) -> str:
     if not TAG_RE.match(version):
         raise PlanError(f"version {version!r} is not a valid image tag")
@@ -200,6 +232,8 @@ def build_candidate(
         if expected and platforms != expected:
             raise PlanError(f"{name}: {tags[0]} has platforms {platforms}, bake expects {expected}")
         images[name] = {
+            "branch": target_branch(target),
+            "lineup": target_lineup(name),
             "repo": repo,
             "digest": digest,
             "candidate_tags": tags,
@@ -216,6 +250,88 @@ def build_candidate(
         "tests": {"status": "pending"},
         "images": images,
     }
+
+
+# ---------------------------------------------------------------------------
+# affected (PR CI)
+# ---------------------------------------------------------------------------
+
+# Paths every image is built from (or that decide what the tests check).
+GLOBAL_PATHS = ("artifacts", "healthcheck", "frontend", "docker-bake.hcl", "tests")
+# CI plumbing: a change here proves itself on the smallest real image.
+SMOKE_PATHS = (
+    ".github/workflows/ci.yml",
+    ".github/actions/run-tests",
+    ".github/actions/setup-docker-buildx",
+    ".github/actions/free-disk-space",
+    "scripts/ci/bakeplan.py",
+)
+SMOKE_TARGETS = ("coder-base",)
+
+
+def _under(path: str, prefix: str) -> bool:
+    # A submodule bump shows up as the bare path (images/agent), a file as
+    # images/agent/...; both belong to the prefix.
+    return path == prefix or path.startswith(prefix + "/")
+
+
+def affected_targets(plan: dict[str, Any], changed: list[str]) -> list[str]:
+    """Published targets of `plan` whose image a change to `changed` can alter.
+
+    A target is touched by files in its bake context, except other variants'
+    docker/<variant>/ directories; dependents of a touched target are touched
+    too. GLOBAL_PATHS touch everything.
+    """
+    targets = plan.get("target", {})
+    published = published_targets(plan)
+    if any(_under(path, g) for path in changed for g in GLOBAL_PATHS):
+        return sorted(published)
+
+    touched = set()
+    for name, target in targets.items():
+        context = target.get("context") or ""
+        variant_dir = str(Path(context) / Path(target.get("dockerfile") or "").parent)
+        for path in changed:
+            if not _under(path, context):
+                continue
+            if _under(path, f"{context}/docker") and not _under(path, variant_dir):
+                continue  # another variant's Dockerfile directory
+            touched.add(name)
+
+    deps = base_dependencies(plan)
+    grew = True
+    while grew:
+        grew = False
+        for name, bases in deps.items():
+            if name not in touched and touched.intersection(bases):
+                touched.add(name)
+                grew = True
+    # Smoke targets are added after propagation: CI plumbing needs one real
+    # build and test, not the smoke target's dependents.
+    if any(_under(path, s) for path in changed for s in SMOKE_PATHS):
+        touched.update(t for t in SMOKE_TARGETS if t in targets)
+    return sorted(touched & set(published))
+
+
+def test_matrix(candidate: dict[str, Any]) -> list[dict[str, Any]]:
+    """One test job per candidate image and platform.
+
+    universal/amd64 legs gate the release; arm64 and ascend legs run on
+    native arm64 runners and only report until they have proven stable.
+    """
+    legs = []
+    for name, image in sorted(candidate.get("images", {}).items()):
+        for platform in image["platforms"]:
+            arch = platform.split("/")[1]
+            legs.append({
+                "target": name,
+                "branch": image["branch"],
+                "lineup": image["lineup"],
+                "arch": arch,
+                "runner": "ubuntu-24.04-arm" if arch == "arm64" else "ubuntu-24.04",
+                "blocking": image["lineup"] == "universal" and arch == "amd64",
+            })
+    return legs
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +447,48 @@ def split_names(value: str) -> list[str]:
     return names
 
 
+def github_output(**values: str) -> None:
+    path = os.environ.get("GITHUB_OUTPUT")
+    lines = [f"{k}={v}" for k, v in values.items()]
+    if path:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+    else:
+        print("\n".join(lines))
+
+
+def cmd_affected(args: argparse.Namespace) -> None:
+    plan = bake_print([args.lineup], version="ci", staging=False)
+    published = published_targets(plan)
+    if args.targets:
+        names = sorted(set(split_names(args.targets)))
+        unknown = [n for n in names if n not in published]
+        if unknown:
+            raise PlanError(f"not published {args.lineup} targets: {', '.join(unknown)}")
+        print(f"explicit targets: {', '.join(names)}", file=sys.stderr)
+    else:
+        if not args.changed:
+            raise PlanError("give --changed or --targets")
+        changed = [line.strip() for line in Path(args.changed).read_text().splitlines() if line.strip()]
+        names = affected_targets(plan, changed)
+        print(f"{len(changed)} changed paths -> {len(names)} targets: {', '.join(names) or 'none'}", file=sys.stderr)
+    matrix = [{"target": n, "branch": target_branch(published[n])} for n in names]
+    github_output(matrix=json.dumps(matrix, separators=(",", ":")), count=str(len(matrix)))
+
+
+def cmd_test_matrix(args: argparse.Namespace) -> None:
+    legs = test_matrix(json.loads(Path(args.candidate).read_text()))
+    github_output(matrix=json.dumps(legs, separators=(",", ":")), count=str(len(legs)))
+
+
+def cmd_set_tests(args: argparse.Namespace) -> None:
+    path = Path(args.candidate)
+    doc = json.loads(path.read_text())
+    doc["tests"] = {"status": args.status, "run": os.environ.get("CANDIDATE_SOURCE", "")}
+    path.write_text(json.dumps(doc, indent=2) + "\n")
+    print(f"candidate {doc['version']}: tests {args.status}")
+
+
 def cmd_candidate(args: argparse.Namespace) -> None:
     names = split_names(args.targets)
     if not names:
@@ -381,6 +539,21 @@ def cmd_promote(args: argparse.Namespace) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("affected", help="targets a change touches (writes matrix/count outputs)")
+    p.add_argument("--changed", help="file with one changed path per line (git diff --name-only)")
+    p.add_argument("--targets", default="", help="explicit comma-separated targets instead of --changed")
+    p.add_argument("--lineup", default="universal", choices=["universal", "ascend"])
+    p.set_defaults(func=cmd_affected)
+
+    p = sub.add_parser("test-matrix", help="test jobs for a candidate (writes matrix/count outputs)")
+    p.add_argument("--candidate", required=True)
+    p.set_defaults(func=cmd_test_matrix)
+
+    p = sub.add_parser("set-tests", help="record the test outcome in candidate.json")
+    p.add_argument("--candidate", required=True)
+    p.add_argument("--status", required=True, choices=["passed", "failed"])
+    p.set_defaults(func=cmd_set_tests)
 
     p = sub.add_parser("candidate", help="record the digests of a staging build")
     p.add_argument("--version", required=True)
