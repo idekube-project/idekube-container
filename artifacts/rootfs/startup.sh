@@ -7,7 +7,7 @@ if [ -z "${I_AM_INIT_CONTAINER:-}" ]; then
   echo "I_AM_INIT_CONTAINER variable is not set. Skipping..."
 else
   echo "I_AM_INIT_CONTAINER variable is set."
-  bash /init-container.sh
+  bash /init-containers.sh
   exit $?
 fi
 

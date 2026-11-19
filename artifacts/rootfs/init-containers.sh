@@ -16,6 +16,14 @@ else
     echo "/rootfs is mounted to $(mountpoint -d /rootfs)."
 fi
 
+# Only seed /rootfs once: re-running would wipe whatever the persisted root
+# filesystem accumulated since. IDEKUBE_ROOTFS_RESET=1 forces a fresh copy.
+MARKER=/rootfs/.idekube-rootfs-initialized
+if [ -f "$MARKER" ] && [ -z "${IDEKUBE_ROOTFS_RESET:-}" ]; then
+    echo "/rootfs is already initialized ($MARKER exists). Set IDEKUBE_ROOTFS_RESET=1 to re-sync. Skipping."
+    exit 0
+fi
+
 # Clean /rootfs
 rm -rf /rootfs/* /rootfs/.*
 
@@ -37,9 +45,17 @@ rsync -aAXH --info=progress2 \
   --exclude=/lost+found \
   --exclude=/boot \
   / /rootfs/
+rsync_status=$?
+# 24 means some source files vanished mid-copy, which is harmless on a live root.
+if [ "$rsync_status" -ne 0 ] && [ "$rsync_status" -ne 24 ]; then
+    echo "rsync failed with exit code $rsync_status; /rootfs is left uninitialized." >&2
+    exit 1
+fi
 
 # Create essential directories that were excluded
 mkdir -p /rootfs/{proc,sys,dev,run,tmp,mnt,media,var/tmp,var/run}
+
+touch "$MARKER"
 
 # exit successfully
 echo "Init container completed successfully."
