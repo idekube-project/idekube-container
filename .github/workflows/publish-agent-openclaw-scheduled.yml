@@ -17,7 +17,7 @@ jobs:
     env:
       OPENCLAW_REPO: openclaw/openclaw
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: recursive
           fetch-depth: 0
@@ -35,6 +35,12 @@ jobs:
           image_version="$(git describe --tags --abbrev=0 2>/dev/null || true)"
           if [[ -z "$image_version" ]]; then
             echo "Unable to resolve idekube-container git tag. Create a git tag first." >&2
+            exit 1
+          fi
+          # Anyone who can push a tag controls this string; it ends up in image
+          # tags and step outputs, so only accept Docker tag characters.
+          if [[ ! "$image_version" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,100}$ ]]; then
+            echo "Git tag '$image_version' is not a valid image tag component." >&2
             exit 1
           fi
 
@@ -66,9 +72,11 @@ jobs:
 
       - name: Decide which lineups need publishing
         id: decide
+        env:
+          FULL_VERSION: ${{ steps.openclaw.outputs.full_version }}
         run: |
           set +e
-          base="ghcr.io/idekube-project/idekube-container-agent:openclaw-${{ steps.openclaw.outputs.full_version }}"
+          base="ghcr.io/idekube-project/idekube-container-agent:openclaw-${FULL_VERSION}"
           docker buildx imagetools inspect "$base"         >/dev/null 2>&1; universal_found=$?
           docker buildx imagetools inspect "${base}-ascend" >/dev/null 2>&1; ascend_found=$?
           set -e
@@ -93,7 +101,7 @@ jobs:
       # hits a libc-bin/ldconfig segfault (dpkg exit 139, apt 100).
       - name: Build and push agent-openclaw
         if: steps.decide.outputs.targets != ''
-        uses: docker/bake-action@v7
+        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
         env:
           VERSION: ${{ steps.openclaw.outputs.full_version }}
           OPENCLAW_VERSION: ${{ steps.openclaw.outputs.openclaw_version }}
@@ -106,13 +114,19 @@ jobs:
           push: true
 
       - name: Summary
+        env:
+          FULL_VERSION: ${{ steps.openclaw.outputs.full_version }}
+          OPENCLAW_VERSION: ${{ steps.openclaw.outputs.openclaw_version }}
+          TARGETS: ${{ steps.decide.outputs.targets }}
+          UNIVERSAL_EXISTS: ${{ steps.decide.outputs.universal_exists }}
+          ASCEND_EXISTS: ${{ steps.decide.outputs.ascend_exists }}
         run: |
-          base="ghcr.io/idekube-project/idekube-container-agent:openclaw-${{ steps.openclaw.outputs.full_version }}"
-          if [[ -z "${{ steps.decide.outputs.targets }}" ]]; then
+          base="ghcr.io/idekube-project/idekube-container-agent:openclaw-${FULL_VERSION}"
+          if [[ -z "$TARGETS" ]]; then
             echo "Both lineup tags already exist; nothing to do." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "Published targets: ${{ steps.decide.outputs.targets }}" >> "$GITHUB_STEP_SUMMARY"
-            [[ "${{ steps.decide.outputs.universal_exists }}" == "false" ]] && echo "- $base" >> "$GITHUB_STEP_SUMMARY"
-            [[ "${{ steps.decide.outputs.ascend_exists }}"    == "false" ]] && echo "- ${base}-ascend" >> "$GITHUB_STEP_SUMMARY"
-            echo "OPENCLAW_VERSION=${{ steps.openclaw.outputs.openclaw_version }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Published targets: ${TARGETS}" >> "$GITHUB_STEP_SUMMARY"
+            [[ "$UNIVERSAL_EXISTS" == "false" ]] && echo "- $base" >> "$GITHUB_STEP_SUMMARY"
+            [[ "$ASCEND_EXISTS"    == "false" ]] && echo "- ${base}-ascend" >> "$GITHUB_STEP_SUMMARY"
+            echo "OPENCLAW_VERSION=${OPENCLAW_VERSION}" >> "$GITHUB_STEP_SUMMARY"
           fi

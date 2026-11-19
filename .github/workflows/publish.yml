@@ -44,7 +44,7 @@ jobs:
       matrix:
         lineup: [universal, ascend]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: recursive
           fetch-depth: 0
@@ -60,9 +60,13 @@ jobs:
       #   - targets empty    -> lineup input controls (both / universal / ascend).
       - name: Route matrix leg (targets overrides lineup)
         if: ${{ github.event_name == 'workflow_dispatch' && ( (github.event.inputs.targets != '' && matrix.lineup != 'universal') || (github.event.inputs.targets == '' && github.event.inputs.lineup != 'both' && github.event.inputs.lineup != matrix.lineup) ) }}
+        env:
+          LINEUP: ${{ matrix.lineup }}
+          INPUT_TARGETS: ${{ github.event.inputs.targets }}
+          INPUT_LINEUP: ${{ github.event.inputs.lineup }}
         run: |
-          echo "Skipping ${{ matrix.lineup }} (targets='${{ github.event.inputs.targets }}', lineup='${{ github.event.inputs.lineup }}')"
-          echo "SKIP=1" >> $GITHUB_ENV
+          echo "Skipping ${LINEUP} (targets='${INPUT_TARGETS}', lineup='${INPUT_LINEUP}')"
+          echo "SKIP=1" >> "$GITHUB_ENV"
 
       - name: Setup Docker build environment
         if: env.SKIP != '1'
@@ -72,14 +76,38 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Validates the dispatch inputs and picks the bake targets for this leg
+      # (skip_base without targets -> <lineup>-derived; skip_base with targets
+      # that still contain a base image -> error). See the script header.
+      - name: Resolve bake targets
+        id: plan
+        if: env.SKIP != '1'
+        env:
+          MATRIX_LINEUP: ${{ matrix.lineup }}
+          INPUT_TARGETS: ${{ github.event.inputs.targets }}
+          SKIP_BASE: ${{ github.event.inputs.skip_base }}
+          BASE_TAG: ${{ github.event.inputs.base_tag }}
+          BASE_TAG_ASCEND: ${{ github.event.inputs.base_tag_ascend }}
+          BAKE_OVERRIDE: docker-bake.staging.hcl
+        run: ./scripts/ci-resolve-targets.sh
+
       - name: Resolve staging version
         id: vars
         if: env.SKIP != '1'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            VERSION="${{ github.event.release.tag_name }}"
+          if [[ "$EVENT_NAME" == "release" ]]; then
+            VERSION="$RELEASE_TAG"
           else
             VERSION="${GITHUB_SHA::7}"
+          fi
+
+          # Docker tag grammar; also keeps odd release/tag names out of bake.
+          if [[ ! "$VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "::error::VERSION '$VERSION' is not a valid image tag." >&2
+            exit 1
           fi
           FRONTEND_HASH="$(git -C frontend rev-parse --short HEAD)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -88,7 +116,7 @@ jobs:
 
       - name: Build and push staging images (${{ matrix.lineup }})
         if: env.SKIP != '1'
-        uses: docker/bake-action@v7
+        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
         env:
           VERSION: ${{ steps.vars.outputs.version }}
           FRONTEND_HASH: ${{ steps.vars.outputs.frontend_hash }}
@@ -99,5 +127,5 @@ jobs:
             docker-bake.hcl
             docker-bake.staging.hcl
             ${{ github.event.inputs.skip_base == 'true' && 'docker-bake.skip-base.hcl' || '' }}
-          targets: ${{ github.event.inputs.targets || matrix.lineup }}
+          targets: ${{ steps.plan.outputs.targets }}
           push: true
