@@ -20,3 +20,6 @@ mkdir -p /run/sshd
 if ! grep -q "PasswordAuthentication no" /etc/ssh/sshd_config; then
     echo "PasswordAuthentication no" >> /etc/ssh/sshd_config
 fi
+
+# Never ship SSH host keys in the image (startup.sh generates them per instance).
+rm -f /etc/ssh/ssh_host_*

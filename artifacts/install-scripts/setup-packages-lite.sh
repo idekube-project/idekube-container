@@ -10,3 +10,7 @@ apt-get autoclean -y && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 # Limit the number of worker processes in Nginx
 sed -i 's|worker_processes .*|worker_processes 2;|' /etc/nginx/nginx.conf
+
+# openssh-server generates host keys on install. Drop them in this same layer
+# so no private key ships in the image; startup.sh creates per-instance keys.
+rm -f /etc/ssh/ssh_host_*

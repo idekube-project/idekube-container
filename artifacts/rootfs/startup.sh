@@ -7,7 +7,7 @@ if [ -z "${I_AM_INIT_CONTAINER:-}" ]; then
   echo "I_AM_INIT_CONTAINER variable is not set. Skipping..."
 else
   echo "I_AM_INIT_CONTAINER variable is set."
-  bash /init-container.sh
+  bash /init-containers.sh
   exit $?
 fi
 
@@ -158,7 +158,7 @@ if [ -d "$HOME" ]; then
 else
     echo "Warning: Home folder $HOME does not exist"
 fi
-chmod 755 "$HOME" 2>/dev/null || echo "Warning: Failed to set permissions on home folder"
+chmod 750 "$HOME" 2>/dev/null || echo "Warning: Failed to set permissions on home folder"
 
 # ------------------------------------------------------
 # response to IDEKUBE_INIT_HOME
@@ -203,11 +203,32 @@ else
 fi
 chown -R "$USER:$USER" "$HOME/.ssh" 2>/dev/null || echo "Warning: Failed to change ownership of .ssh"
 
+# ------------------------------------------------------
+# Per-instance SSH host keys
+# ------------------------------------------------------
+# Host keys baked into any image layer are shared by everyone who pulls the
+# image, so replace them once per instance. The marker keeps the keys stable
+# across restarts of the same container and in a persisted /rootfs.
+HOST_KEY_MARKER=/etc/ssh/.idekube-host-keys
+if [ ! -f "$HOST_KEY_MARKER" ]; then
+    echo "Generating per-instance SSH host keys"
+    rm -f /etc/ssh/ssh_host_*
+    if ssh-keygen -A && touch "$HOST_KEY_MARKER"; then
+        echo "SSH host keys generated"
+    else
+        echo "Warning: Failed to generate SSH host keys"
+    fi
+fi
 
 # ------------------------------------------------------
 # response to IDEKUBE_ACCESS_TOKEN
 # ------------------------------------------------------
-bash /authn.sh
+# authn.sh leaves nginx in deny-all mode when it fails; refuse to start at
+# all so a bad token surfaces as a failed container, not a silent 401 wall.
+if ! bash /authn.sh; then
+    echo "FATAL: access token configuration failed, refusing to start." >&2
+    exit 1
+fi
 
 # ------------------------------------------------------
 # Detect all startup bash scripts and run them
