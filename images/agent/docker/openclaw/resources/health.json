@@ -1,0 +1,11 @@
+{
+  "branch": "agent/openclaw",
+  "entry": "/",
+  "main": "agent",
+  "services": {
+    "agent":    { "port": 18789, "path": "/agent",    "probePath": "/" },
+    "terminal": { "port": 7681,  "path": "/terminal", "probePath": "/" },
+    "files":    { "port": 5000,  "path": "/files",    "probePath": "/files" },
+    "ssh":      { "port": 2222,  "path": "/ssh", "probeMethod": "tcp" }
+  }
+}
