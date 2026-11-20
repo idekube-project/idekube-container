@@ -295,7 +295,7 @@ Every container exposes `/health` (no auth) returning JSON for Kubernetes probes
 
 This project is licensed under the terms of the [MIT License](LICENSE). See the `LICENSE` file at the root of this repository for the full text.
 
-The MIT License applies to the source code in this meta-repository, including the build configuration (`docker-bake.hcl` and overrides), helper scripts, test suite, CI workflows, and documentation. Submodules referenced under `images/`, `artifacts/`, `frontend/`, and `healthcheck/` are governed by the license declared in each respective repository.
+The MIT License applies to everything in this repository: the build configuration (`docker-bake.hcl` and overrides), the image sources under `images/`, `artifacts/`, `frontend/`, `healthcheck/` and `qemu-builder/` (formerly separate repositories, now part of this one), helper scripts, the test suite, CI workflows and documentation.
 
 Container images published by this project bundle third-party software distributed under its own license. Redistribution and use of the built images must comply with the terms of each bundled component, including but not limited to the operating system base image and the upstream projects acknowledged below.
 
