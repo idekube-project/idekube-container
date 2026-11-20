@@ -1,53 +1,34 @@
 # featured/kathara QEMU image
 
-Ubuntu 24.04 VM with Kathara network-emulation framework and Docker v28 pre-installed.
+Ubuntu 24.04 VM with the Kathara network-emulation framework and Docker v28, layered on `featured/base` (`.env`: `IDEKUBE_FROM=featured/base`). Docker starts on every boot; Kathara labs run inside the VM.
 
-## Why Docker is installed but not started during provisioning
+## Why forwarded connections used to die ~12 s after boot
 
-`install.yml` installs `docker-ce` v28 from the official apt repo but blocks the package maintainer scripts from starting the daemon during `make build_qemu_root`. Images are not pre-pulled during provisioning. Docker is left in its package-default systemd state so it can start normally when the baked VM is later booted for use.
+Symptom (before the fix): `docker run -p …` an image of this flavor and SSH and HTTP work for a few seconds, then every forwarded connection hangs ("Connection timed out during banner exchange") and never recovers. The same freeze hit the Ansible SSH session whenever dockerd started during provisioning.
 
-### What happens if Docker starts during provisioning
+Cause, confirmed on the serial console of a wedged VM:
 
-The VM is provisioned over an SSH session forwarded by QEMU's user-mode network backend (slirp). `scripts/shell/build_qemu_root.sh` runs `ansible-playbook -c ssh` against `idekube@localhost:10022`, which slirp maps to the guest's `eth0` at `10.0.2.15:22`.
+1. QEMU's user-mode network (libslirp) hands a host-forwarded connection to the guest with its **real source address**, unless that address is loopback (then the guest sees `10.0.2.2`). With `docker run -p`, connections reach the QEMU container from Docker's bridge gateway `172.17.0.1`; in Kubernetes, from an ingress or node address.
+2. The VM's own dockerd creates `docker0` with Docker's default `172.17.0.1/16` about 12 s into boot.
+3. From then on `172.17.0.1` is a local address of the guest, so the guest kernel drops the forwarded SYNs as martians (`IPv4: martian source 10.0.2.15 from 172.17.0.1, on dev enp0s2`). slirp shows the connections stuck in `SYN_SENT`; outbound traffic keeps working.
 
-When `dockerd` starts it does all of the following in quick succession:
+It was earlier blamed on iptables rule swaps and conntrack flushes; neither is involved (the `policy-rc.d` guard only helped because it kept dockerd, and so docker0, from starting).
 
-1. Creates the `docker0` bridge and flips `net.ipv4.ip_forward=1` + `bridge-nf-call-iptables=1`.
-2. Loads `br_netfilter`, `overlay`, `nf_nat`, `xt_conntrack`, … modules.
-3. Inserts `DOCKER`, `DOCKER-USER`, `DOCKER-ISOLATION-STAGE-1/2` chains in `filter` and `nat`.
-4. On Ubuntu 24.04 the iptables CLI talks to the nftables backend; the rule-load is an atomic ruleset swap that briefly drops packets.
-5. Flushes conntrack entries that no longer match the new ruleset.
+## The fix
 
-This can kill the provisioning SSH connection. Slirp-forwarded TCP is fragile here because the Ansible control connection already exists while Docker is changing the guest packet path. Symptoms observed:
+- **Loopback relay** (`artifacts/startup-scripts/run.sh`, all QEMU images): inside the container, slirp forwards listen on `127.0.0.1` only and socat relays the published ports to them, so the guest always sees `10.0.2.2`, whatever the cluster's address plan.
+- **Docker address ranges** (`install.yml`, this flavor): `idekube-docker-network.service` runs before `docker.service` on every boot and merges `bip` and `default-address-pools` into `/etc/docker/daemon.json` (other keys are kept). Defaults stay clear of Docker's own `172.16.0.0/12`/`192.168.0.0/16` and the usual k3s, kubeadm, Calico, kind and Podman ranges, so the VM can still reach those networks:
 
-- Established SSH session freezes mid-task.
-- New `ssh -p 10022` connections time out during banner exchange.
-- `curl`/`apt` inside the guest hangs.
-- QEMU host process is healthy (ppoll, ~10% CPU); the *guest network stack* is wedged.
+  | Variable | Default | Format |
+  |---|---|---|
+  | `IDEKUBE_VM_DOCKER_BIP` | `10.213.0.1/24` | docker0's address with prefix (8-30) |
+  | `IDEKUBE_VM_DOCKER_ADDRESS_POOLS` | `10.214.0.0/16:24` | `base/len:size[,...]`, `len <= size <= 30` |
 
-### What the playbook does instead
-
-| Step | Mitigation |
-|---|---|
-| Before `apt install docker-ce` | `update-alternatives --set iptables iptables-legacy` (and ip6tables). Avoids the Ubuntu 24.04 nft-backend rule swap. |
-| Before `apt install docker-ce` | Drop `/usr/sbin/policy-rc.d` returning 101. dpkg postinst respects this and skips `invoke-rc.d docker start`. |
-| After `apt install docker-ce` | Remove `policy-rc.d` so subsequent package installs behave normally. |
-| After `apt install docker-ce` | Leave Docker's systemd units in their package-default state for normal runtime boot. |
-| Later in playbook | Clone `Kathara-Labs` repo only. **No** `docker pull`, **no** explicit daemon start. |
-
-## Docker at runtime
-
-Runtime boot is different from provisioning. The VM is not holding an Ansible SSH control session open while `apt` is installing Docker, and users connect after boot-time network and firewall setup has settled. Docker can therefore start normally at runtime.
-
-If Docker is not running, start it with:
-
-```bash
-sudo systemctl enable --now docker.service
-```
+  Set them on the container (Pod env); an empty value means the default. The container's `startup.sh` rejects a malformed value before the VM boots; cloud-init passes valid ones to the guest through `/etc/idekube/runtime-env`.
 
 ## Pre-pulling Kathara images
 
-Done after the daemon is up:
+Images are not pulled while the disk is built. Once the VM is up:
 
 ```bash
 for img in kathara/base kathara/frr kathara/quagga; do
@@ -55,14 +36,13 @@ for img in kathara/base kathara/frr kathara/quagga; do
 done
 ```
 
-If you want these baked into the disk image, add a new branch (e.g. `featured/kathara-prepulled`) that starts from `featured/kathara` via the `IDEKUBE_FROM` mechanism in the branch's `.env` — boot that VM, start Docker, pull, shut down cleanly. Don't do it in `install.yml` or you'll reintroduce the hang.
+To bake them into the disk image, add a branch (e.g. `featured/kathara-prepulled`) that starts from `featured/kathara` via `IDEKUBE_FROM` in its `.env`, start Docker in its playbook, pull, and let the build shut the VM down cleanly.
 
-## If it still hangs
+## If provisioning hangs
 
-1. **Confirm Docker did not start during provisioning.** The playbook should install `/usr/sbin/policy-rc.d` before the Docker apt task and remove it immediately afterward.
-2. **Check iptables backend.** `sudo iptables --version` should say `(legacy)` not `(nf_tables)`.
-3. **Next suspect: `wireshark-common` postinst.** It calls `dpkg-reconfigure` which prompts for "non-superusers should capture packets" — if stdin is not a tty, it may block. `DEBIAN_FRONTEND=noninteractive` on the apt task is required (already set).
-4. **Next suspect: `unattended-upgrades`.** Can hold `/var/lib/dpkg/lock-frontend` for minutes in parallel with the playbook's apt tasks. Add `apt: lock_timeout=300` or disable the service before provisioning.
+1. **`wireshark-common` postinst** calls `dpkg-reconfigure`, which prompts for "non-superusers should capture packets"; without a tty it may block. `DEBIAN_FRONTEND=noninteractive` on the apt task is required (already set).
+2. **`unattended-upgrades`** can hold `/var/lib/dpkg/lock-frontend` for minutes in parallel with the playbook's apt tasks. Add `apt: lock_timeout=300` or disable the service before provisioning.
+3. For a hang that looks like the one above, check `docker0`'s address (`ip -br addr show docker0`) and the kernel log for `martian source`.
 
 ## Reference: playbook task order
 
@@ -70,17 +50,16 @@ If you want these baked into the disk image, add a new branch (e.g. `featured/ka
 Update apt cache
 Install required system packages (ca-certificates, curl, gnupg, …)
 Setup Docker:
-  Switch iptables → legacy
   Ensure /etc/apt/keyrings exists
   Add Docker GPG key (with retry)
   Detect dpkg architecture
   Add Docker apt repo
   Resolve latest 5:28.x version via apt-cache madison
-  Install policy-rc.d guard
+  Install policy-rc.d guard (no daemon starts while the image is built)
   apt install docker-ce{,-cli}=<pinned>, containerd.io, buildx, compose
   Remove policy-rc.d
-  Leave Docker systemd units package-default for runtime boot
   Add idekube to docker group
+Docker address ranges: idekube-docker-network (+ service, docker.service drop-in), enabled
 Setup Kathara (amd64): add PPA, apt install kathara
 Install network tools (wireshark, tcpdump, …)
 Setup netcap (amd64): download + extract + install

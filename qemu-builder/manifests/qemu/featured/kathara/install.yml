@@ -35,19 +35,6 @@
 
     - name: Setup Docker
       block:
-        # Ubuntu 24.04 ships iptables-nft by default. Docker's iptables
-        # manipulation against the nftables backend has been observed to
-        # momentarily drop established connections (e.g. our provisioning
-        # SSH) and to leave the guest network stack in a wedged state.
-        # Pinning to iptables-legacy avoids the backend churn.
-        - name: Switch iptables to legacy backend
-          alternatives:
-            name: "{{ item.name }}"
-            path: "{{ item.path }}"
-          loop:
-            - { name: iptables,  path: /usr/sbin/iptables-legacy  }
-            - { name: ip6tables, path: /usr/sbin/ip6tables-legacy }
-
         - name: Ensure apt keyrings directory
           file:
             path: /etc/apt/keyrings
@@ -87,11 +74,10 @@
           changed_when: false
           failed_when: docker_ce_version.stdout | trim == ""
 
-        # Block dpkg postinst from starting docker/containerd during package
-        # installation. The failure mode is provisioning-specific: Ansible is
-        # using an established SSH session over QEMU hostfwd while dockerd is
-        # rewriting guest firewall/bridge state. Leave the systemd units in
-        # their package-default state so Docker is available on normal VM boot.
+        # Keep dpkg postinst from starting docker/containerd while the image is
+        # built: nothing needs them yet, and dockerd would create docker0 with
+        # its default 172.17.0.1/16 (see "Docker address ranges" below for why
+        # that address matters). The units stay enabled for runtime boots.
         - name: Install policy-rc.d to block service auto-start
           copy:
             dest: /usr/sbin/policy-rc.d
@@ -125,6 +111,43 @@
             name: "idekube"
             groups: docker
             append: yes
+
+    # Docker address ranges. Docker's default 172.17.0.0/16 (and its default
+    # pools) overlap networks the VM must reach or receive traffic from: the
+    # outer Docker bridge and Kubernetes pod/service ranges. Before the QEMU
+    # container relayed forwarded ports through loopback, a connection from
+    # 172.17.0.1 even became a martian once docker0 took that address, and
+    # every forwarded SSH/HTTP connection died ~12 s into boot.
+    # idekube-docker-network writes bip and default-address-pools from
+    # IDEKUBE_VM_DOCKER_BIP / IDEKUBE_VM_DOCKER_ADDRESS_POOLS (defaults
+    # 10.213.0.1/24 and 10.214.0.0/16:24) before dockerd starts, every boot.
+    - name: Docker address ranges from the runtime environment
+      block:
+        - name: Install idekube-docker-network
+          copy:
+            src: files/idekube-docker-network
+            dest: /usr/local/sbin/idekube-docker-network
+            mode: '0755'
+        - name: Install idekube-docker-network.service
+          copy:
+            src: files/idekube-docker-network.service
+            dest: /etc/systemd/system/idekube-docker-network.service
+            mode: '0644'
+        - name: Create docker.service drop-in directory
+          file:
+            path: /etc/systemd/system/docker.service.d
+            state: directory
+            mode: '0755'
+        - name: Order docker.service after idekube-docker-network
+          copy:
+            src: files/docker-idekube-network.conf
+            dest: /etc/systemd/system/docker.service.d/10-idekube-network.conf
+            mode: '0644'
+        - name: Enable idekube-docker-network
+          systemd:
+            name: idekube-docker-network
+            enabled: yes
+            daemon_reload: yes
 
     - name: Setup Kathara (amd64 only)
       block:

@@ -1,0 +1,14 @@
+[Unit]
+Description=IDEKube: address ranges of the VM's Docker networks
+# After cloud-init has written /etc/idekube/runtime-env (the unit was renamed
+# to cloud-init-network.service in newer cloud-init), before dockerd reads
+# daemon.json. Same ordering as idekube-authn.service.
+After=local-fs.target cloud-init.service cloud-init-network.service
+Before=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/idekube-docker-network
+
+[Install]
+WantedBy=multi-user.target
