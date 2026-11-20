@@ -2,12 +2,10 @@
 - name: Setup IDEKube Featured Environment
   hosts: all
   become: yes
-  vars:
-    websocat_version: "1.13.0"
-    coder_version: "4.92.2"
-    # Exact packagecloud apt versions; keep in step with docker-bake.hcl.
-    virtualgl_version: "3.1.5-20260814"
-    turbovnc_version: "3.3.1-20260820"
+  # Upstream versions (websocat_version, coder_version, miniconda_version,
+  # virtualgl_version, turbovnc_version) are not pinned here:
+  # build_qemu_root.sh passes every build arg of the flavor's base target in
+  # docker-bake.hcl, the same values the container images are built with.
 
   tasks:
     # Install essential packages
@@ -120,7 +118,7 @@
         changed_when: false
       - name: Download Miniconda
         get_url:
-          url: "https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-{{ conda_arch_result.stdout }}.sh"
+          url: "https://repo.continuum.io/miniconda/Miniconda3-{{ miniconda_version }}-Linux-{{ conda_arch_result.stdout }}.sh"
           dest: /tmp/miniconda.sh
           mode: '0755'
       - name: Install Miniconda

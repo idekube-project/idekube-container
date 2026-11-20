@@ -29,6 +29,18 @@ require_dir() {
     fi
 }
 
+# Write the build args of the flavor's base image target (docker-bake.hcl)
+# as an Ansible extra-vars JSON file with lower-cased keys.
+write_bake_vars() {
+    local flavor="$1" out="$2" target plan
+    for target in "${flavor}-base-universal" "${flavor}-base"; do
+        plan=$(cd "${META_ROOT}" && docker buildx bake -f docker-bake.hcl --print "${target}" 2>/dev/null) || continue
+        jq -e --arg t "${target}" '.target[$t].args | with_entries(.key |= ascii_downcase)' <<< "${plan}" > "${out}" \
+            && return 0
+    done
+    return 1
+}
+
 # --- Architecture mapping ---
 # ARCH is already arm64/amd64 from qemu_common.sh; derive QEMU binary arch
 IMG_ARCH="${ARCH}"
@@ -83,6 +95,11 @@ else
 fi
 require_file "$SOURCE_IMAGE" "Run 'bash scripts/shell/prepare_qemu_images.sh' first."
 cp "$SOURCE_IMAGE" "$TARGET_IMAGE"
+
+# Guest payloads built by prepare_qemu_tools.sh (make qemu-tools).
+FRONTEND_DIST="$(pwd)/.cache/qemu_tools/frontend-dist"
+require_file "${FRONTEND_DIST}/index.html" "Run 'bash scripts/shell/prepare_qemu_tools.sh' first (it builds the landing page)."
+require_file "${FRONTEND_DIST}/.idekube-version" "Run 'bash scripts/shell/prepare_qemu_tools.sh' first (it builds the landing page)."
 
 # Copy configs and UEFI files
 echo "Copying configuration and UEFI files..."
@@ -142,10 +159,16 @@ cleanup() {
 
     if [[ "${VM_MODE}" == "native" ]]; then
         if [[ -n "${VM_PID}" ]] && kill -0 "${VM_PID}" 2>/dev/null; then
-            echo "Killing QEMU process (PID: ${VM_PID})..."
+            # run.sh turns SIGTERM into a guest power-off and exits when QEMU
+            # does (IDEKUBE_VM_SHUTDOWN_TIMEOUT, 25 s by default).
+            echo "Stopping the VM (run.sh PID: ${VM_PID})..."
             kill "${VM_PID}" 2>/dev/null || true
-            sleep 2
+            for _ in $(seq 1 40); do
+                kill -0 "${VM_PID}" 2>/dev/null || break
+                sleep 1
+            done
             if kill -0 "${VM_PID}" 2>/dev/null; then
+                pkill -9 -P "${VM_PID}" 2>/dev/null || true
                 kill -9 "${VM_PID}" 2>/dev/null || true
             fi
         fi
@@ -284,6 +307,17 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         fi
         echo "✓ idekube-healthcheck binary resolved: ${HEALTHCHECK_BINARY}"
 
+        # Upstream versions come from docker-bake.hcl, like the containers'
+        # (every build arg of the flavor's base target, lower-cased:
+        # websocat_version, coder_version, ...). The playbooks pin nothing.
+        BAKE_VARS="${CACHE_ABS_PATH}/configs/bake-vars.json"
+        if ! write_bake_vars "${FLAVOR}" "${BAKE_VARS}"; then
+            echo "✗ Could not read build args for ${FLAVOR} from ${META_ROOT}/docker-bake.hcl"
+            exit 1
+        fi
+        BAKE_VERSIONS=$(jq -r 'to_entries[] | select(.key | endswith("_version")) | .key + "=" + .value' "${BAKE_VARS}" | tr '\n' ' ')
+        echo "✓ Versions from docker-bake.hcl: ${BAKE_VERSIONS}"
+
         # Shared, flavor and VM-only rootfs layers (see sync_rootfs).
         sync_rootfs "${FLAVOR}" "${SSH_USER}@localhost:/tmp/rootfs/" vm_rsync
         echo "✓ rootfs copied successfully."
@@ -293,6 +327,7 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
             echo "Applying ansible playbook: ${PLAYBOOK}..."
             if command -v ansible-playbook &> /dev/null; then
                 if ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i "localhost," \
+                    --extra-vars "@${BAKE_VARS}" \
                     --extra-vars "ansible_ssh_pass=${SSH_PASS} ansible_user=${SSH_USER} ansible_port=${SSH_PORT} idekube_healthcheck_binary=${HEALTHCHECK_BINARY}" \
                     -c ssh "${PLAYBOOK}"; then
                     echo "✓ Ansible playbook applied successfully!"
@@ -314,19 +349,11 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         # with a default index and would clobber anything placed there
         # earlier. Copying last ensures our index.html is the one that
         # sticks.
-        FRONTEND_DIST="frontend/dist"
-        if [[ ! -d "${FRONTEND_DIST}" && -d "${META_ROOT}/frontend/dist" ]]; then
-            FRONTEND_DIST="${META_ROOT}/frontend/dist"
-        fi
-        if [[ -d "${FRONTEND_DIST}" ]]; then
-            echo "Copying frontend dist to /usr/share/nginx/html/..."
-            vm_rsync "${FRONTEND_DIST}/" "${SSH_USER}@localhost:/tmp/frontend-dist/"
-            vm_ssh "sudo rsync -a /tmp/frontend-dist/ /usr/share/nginx/html/"
-            vm_ssh "rm -rf /tmp/frontend-dist"
-            echo "✓ Frontend dist copied successfully."
-        else
-            echo "Warning: frontend/dist not found, skipping landing page."
-        fi
+        echo "Copying frontend dist ($(cat "${FRONTEND_DIST}/.idekube-version")) to /usr/share/nginx/html/..."
+        vm_rsync --exclude=.idekube-version "${FRONTEND_DIST}/" "${SSH_USER}@localhost:/tmp/frontend-dist/"
+        vm_ssh "sudo rsync -a /tmp/frontend-dist/ /usr/share/nginx/html/"
+        vm_ssh "rm -rf /tmp/frontend-dist"
+        echo "✓ Frontend dist copied successfully."
 
         # Gracefully shut down the guest so late writes (healthcheck binary,
         # systemd units, final rootfs rsync) actually land on the qcow2 disk.
