@@ -22,7 +22,7 @@ BAKE_FILES_STAGING    := -f docker-bake.hcl -f docker-bake.staging.hcl
 .PHONY: help buildx-preflight bake bake-staging bake-production push-staging \
         push-production discover discover-staging tag-stable test_deps test test_all \
         test_all_ascend qemu-files qemu-images qemu-tools qemu-cloud-localds \
-        qemu-prepare qemu-engine qemu-root qemu-build qemu-image qemu-wsl
+        qemu-prepare qemu-engine qemu-root qemu-build qemu-image qemu-test qemu-wsl
 
 help:
 	@echo "IDEKube container build orchestrator"
@@ -40,6 +40,7 @@ help:
 	@echo "  make test_all                         Run tests for the entire universal lineup"
 	@echo "  make test_all_ascend                  Run tests for the entire ascend lineup"
 	@echo "  make qemu-image BRANCH=featured/base  Build QEMU root disk + runtime image"
+	@echo "  make qemu-test BRANCH=featured/base   Smoke-test the QEMU runtime image (needs KVM)"
 
 
 # Ensure multi-platform builds use a buildx builder backed by the docker-container
@@ -142,6 +143,10 @@ qemu-build:
 	cd qemu-builder && BRANCH=$(BRANCH) bash scripts/shell/build_qemu.sh
 
 qemu-image: qemu-root qemu-build
+
+qemu-test:
+	@if [ -z "$(BRANCH)" ]; then echo "Error: BRANCH=<flavor>/<variant> required"; exit 1; fi
+	cd qemu-builder && BRANCH=$(BRANCH) bash scripts/shell/test_qemu.sh
 
 qemu-wsl:
 	@if [ -z "$(BRANCH)" ]; then echo "Error: BRANCH=<flavor>/<variant> required"; exit 1; fi
