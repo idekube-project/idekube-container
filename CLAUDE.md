@@ -23,6 +23,7 @@ The build system is **centralized**: a single `docker-bake.hcl` at the meta-repo
 - **`.github/workflows/publish.yml`** — Staging (candidate) builds for pushes to `main` (`edge`), prereleases and manual dispatch; attaches `candidate.json` to the release.
 - **`.github/workflows/ci.yml`** — Pull-request gate (`ci-ok`).
 - **`.github/workflows/publish-production.yml`** — Promotes a release's tested candidate by digest on `release: released` (or dispatch). Builds nothing.
+- **`.github/workflows/ghcr-cleanup.yml`** — Weekly GHCR retention (staging tags and unreferenced untagged versions older than 30 days); `scripts/ci/ghcr-retention-plan.sh` picks the packages and the tags to keep.
 - **`artifacts/`** — Shared install scripts and common rootfs overlay. Mounted into builds via `--build-context artifacts=...`.
 - **`frontend/`** — Vue 3 + TypeScript + Vite landing page **source**. Built inside the bake-driven Docker stage via `--build-context frontend-src=...`.
 - **`healthcheck/`** — Go HTTP health server **source**. Compiled inside the bake-driven Docker stage via `--build-context healthcheck-src=...`.
@@ -147,6 +148,7 @@ Release images are built once and promoted, never rebuilt: production ships the 
 - **Build cache** — lives in the already public image repos as `buildcache-*` tags (a new GHCR package would default to private storage). Main, release and dispatch builds write it; PR builds only read it.
 - **`publish-production.yml` (promotion)** — triggered by `release: released` (a prerelease edited into a release, or a release published directly) and manual dispatch (`version`, `targets`, `dry_run`, `force`). Downloads the release's `candidate.json`, checks it was built from the tag's commit, that its tests passed, and that every `-staging` tag still points to the recorded digest, then `imagetools create`s the release tags from those digests (`bakeplan.py promote`). Release tags that already point elsewhere are refused unless `force`; re-running is idempotent.
 - **`publish-agent-openclaw-scheduled.yml` (OpenClaw fast lane)** — every 12 h: if npm has an OpenClaw version without `openclaw-<release>-<openclaw>` images, rebuild `agent-openclaw-all` from the **latest release tag** (never `main`) on that release's base images (`skip_base`), run it through `_build.yml` (tests included), and promote it with `bakeplan.py promote`. Releases cut before the candidate pipeline (no `scripts/ci/bakeplan.py` at the tag) are skipped. The workflow file runs from `main` while the build uses the tag's scripts, so keep `_build.yml` compatible with the scripts of recent releases.
+- **`ghcr-cleanup.yml` (GHCR retention)** — Mondays 03:17 UTC, via `dataaxiom/ghcr-cleanup-action`, on every package `docker-bake.hcl` tags. For package versions older than 30 days (`updated_at`) it removes `*-staging` tags (a version that also has a release tag only loses the staging tag) and deletes untagged versions that no kept image references (superseded edge builds, overwritten `buildcache-*` manifests, pushes of failed builds); platform and attestation manifests of kept images are reference-counted and survive. Always kept: the edge pointers bake currently tags, and the candidates of prereleases newer than `releases/latest`. Release tags, `stable*` and `buildcache-*` tags never match. Dispatch defaults to `dry_run`; `older_than` must be at least 7 days. Deleting needs the Admin role for this repository under each package's *Manage Actions access*.
 - **Stable aliases** — after a full promotion of the version that is `releases/latest`, `scripts/tag-stable.sh` aliases each `*-base` repo's `stable` / `stable-ascend`. Promoting an older release never moves `stable` back.
 - **Auth** — `GITHUB_TOKEN` → GHCR.
 
@@ -167,7 +169,7 @@ Renovate (Mend app, `renovate.json`) reads these with a regex manager. The optio
 2. Wait for **publish-staging** to finish; the release now has `candidate.json`.
 3. `gh release edit vX.Y.Z --prerelease=false --latest` → **publish-production** promotes in minutes.
 
-If step 3 fails because `candidate.json` is missing (e.g. the release was published directly), dispatch publish-staging with `version=vX.Y.Z`, then re-run the failed promotion. Rehearse with a publish-production dispatch and `dry_run: true`.
+If step 3 fails because `candidate.json` is missing (e.g. the release was published directly), or with "candidate tag … no longer exists" (GHCR retention removes candidates 30 days after they were built, unless they belong to a prerelease newer than the latest release), dispatch publish-staging with `version=vX.Y.Z`, then re-run the failed promotion. Rehearse with a publish-production dispatch and `dry_run: true`.
 
 ### Bake group taxonomy
 
