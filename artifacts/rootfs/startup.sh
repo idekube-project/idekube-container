@@ -2,11 +2,15 @@
 
 set -euo pipefail  # Exit on error, undefined variables, and pipe failures
 
-# check if I_AM_INIT_CONTAINER is set
-if [ -z "${I_AM_INIT_CONTAINER:-}" ]; then
-  echo "I_AM_INIT_CONTAINER variable is not set. Skipping..."
-else
-  echo "I_AM_INIT_CONTAINER variable is set."
+# Boolean switches: true/false, 1/0, yes/no, on/off. Anything else (a typo in
+# a manifest) stops the container here rather than being read as "set".
+# shellcheck source=/dev/null
+source /usr/local/lib/idekube/env.sh
+I_AM_INIT_CONTAINER_FLAG=$(idekube_bool I_AM_INIT_CONTAINER) || exit 1
+INIT_HOME_FLAG=$(idekube_bool IDEKUBE_INIT_HOME) || exit 1
+
+if [ "$I_AM_INIT_CONTAINER_FLAG" = 1 ]; then
+  echo "I_AM_INIT_CONTAINER is true: seeding /rootfs."
   bash /init-containers.sh
   exit $?
 fi
@@ -165,7 +169,7 @@ chmod 750 "$HOME" 2>/dev/null || echo "Warning: Failed to set permissions on hom
 # ------------------------------------------------------
 # Check if home is empty or only contains lost+found (common in fresh volumes)
 home_contents=$(ls -A "$HOME" 2>/dev/null | grep -v '^lost+found$' || true)
-if [ -n "${IDEKUBE_INIT_HOME:-}" ] || [ -z "$home_contents" ]; then
+if [ "$INIT_HOME_FLAG" = 1 ] || [ -z "$home_contents" ]; then
     echo "Initializing home folder"
     if [ -d /etc/skel ]; then
         rsync -al /etc/skel/ "$HOME/" 2>/dev/null || echo "Warning: Failed to sync skel to home"

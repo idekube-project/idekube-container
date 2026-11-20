@@ -17,10 +17,14 @@ else
 fi
 
 # Only seed /rootfs once: re-running would wipe whatever the persisted root
-# filesystem accumulated since. IDEKUBE_ROOTFS_RESET=1 forces a fresh copy.
+# filesystem accumulated since. IDEKUBE_ROOTFS_RESET=true forces a fresh copy;
+# false (or a templated empty value) never does, and anything else stops here.
+# shellcheck source=/dev/null
+source /usr/local/lib/idekube/env.sh
+ROOTFS_RESET=$(idekube_bool IDEKUBE_ROOTFS_RESET) || exit 1
 MARKER=/rootfs/.idekube-rootfs-initialized
-if [ -f "$MARKER" ] && [ -z "${IDEKUBE_ROOTFS_RESET:-}" ]; then
-    echo "/rootfs is already initialized ($MARKER exists). Set IDEKUBE_ROOTFS_RESET=1 to re-sync. Skipping."
+if [ -f "$MARKER" ] && [ "$ROOTFS_RESET" != 1 ]; then
+    echo "/rootfs is already initialized ($MARKER exists). Set IDEKUBE_ROOTFS_RESET=true to re-sync. Skipping."
     exit 0
 fi
 

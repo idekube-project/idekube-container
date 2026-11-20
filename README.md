@@ -255,11 +255,13 @@ Tags are suffixed with `-ascend`.
 
 | Variable                  | Purpose                                      | Default     |
 | ------------------------- | -------------------------------------------- | ----------- |
-| `IDEKUBE_INIT_HOME`       | Initialize home from `/etc/skel`             | empty       |
+| `IDEKUBE_INIT_HOME`       | Initialize home from `/etc/skel` (boolean)   | empty       |
 | `IDEKUBE_PREFERED_SHELL`  | Path to preferred shell                      | `/bin/bash` |
 | `IDEKUBE_USER_UID`        | Override container user UID                  | empty       |
 | `IDEKUBE_AUTHORIZED_KEYS` | Base64-encoded SSH authorized keys           | empty       |
 | `IDEKUBE_ACCESS_TOKEN`    | Nginx-level web auth token (excludes `/ssh`) | empty       |
+
+Booleans take `true`/`false`, `1`/`0`, `yes`/`no` or `on`/`off`; empty means unset, and any other value stops the container with a message. QEMU images have additional `IDEKUBE_VM_*` settings, see [qemu-builder/README.md](qemu-builder/README.md).
 
 ### SSH proxy
 
