@@ -1,0 +1,58 @@
+#!/bin/bash
+#
+# idekube-docker-network — choose the address ranges of the VM's own dockerd.
+#
+# Runs before docker.service on every boot (idekube-docker-network.service)
+# and merges "bip" and "default-address-pools" into /etc/docker/daemon.json,
+# keeping any other setting in that file.
+#
+# Docker's defaults (172.17.0.0/16 for docker0, then 172.18-31.x and
+# 192.168.x) overlap the networks a VM in a container is likely to need to
+# reach: the outer Docker bridge, Kubernetes pod and service ranges (Calico
+# defaults to 192.168.0.0/16). The defaults below avoid those and the usual
+# k3s/kubeadm/kind/Podman ranges; a deployment overrides them through the
+# container's environment, which cloud-init writes to /etc/idekube/runtime-env:
+#   IDEKUBE_VM_DOCKER_BIP            docker0's address, e.g. 10.213.0.1/24
+#   IDEKUBE_VM_DOCKER_ADDRESS_POOLS  base/len:size[,...], e.g. 10.214.0.0/16:24
+# The container's startup.sh rejects malformed values before the VM boots.
+#
+set -euo pipefail
+
+DEFAULT_BIP=10.213.0.1/24
+DEFAULT_POOLS=10.214.0.0/16:24
+CONFIG=/etc/docker/daemon.json
+
+if [ -f /etc/idekube/runtime-env ]; then
+    set -a
+    # shellcheck source=/dev/null
+    . /etc/idekube/runtime-env
+    set +a
+fi
+# shellcheck source=/dev/null
+. /usr/local/lib/idekube/env.sh
+
+bip=$(idekube_docker_bip IDEKUBE_VM_DOCKER_BIP "$DEFAULT_BIP") || {
+    echo "Warning: using the default bip ${DEFAULT_BIP}" >&2
+    bip=$DEFAULT_BIP
+}
+pools=$(idekube_docker_pools IDEKUBE_VM_DOCKER_ADDRESS_POOLS "$DEFAULT_POOLS") || {
+    echo "Warning: using the default address pools ${DEFAULT_POOLS}" >&2
+    pools=$DEFAULT_POOLS
+}
+pools_json=$(printf '%s' "$pools" | jq -R 'split(",") | map(split(":") | {base: .[0], size: (.[1] | tonumber)})')
+
+mkdir -p "$(dirname "$CONFIG")"
+current='{}'
+if [ -s "$CONFIG" ]; then
+    if jq -e 'type == "object"' "$CONFIG" >/dev/null 2>&1; then
+        current=$(cat "$CONFIG")
+    else
+        backup="${CONFIG}.invalid.$(date +%Y%m%d%H%M%S)"
+        echo "Warning: ${CONFIG} is not a JSON object; moved it to ${backup}" >&2
+        mv "$CONFIG" "$backup"
+    fi
+fi
+jq --arg bip "$bip" --argjson pools "$pools_json" \
+    '.bip = $bip | .["default-address-pools"] = $pools' <<< "$current" > "${CONFIG}.tmp"
+mv -f "${CONFIG}.tmp" "$CONFIG"
+echo "docker: bip ${bip}, default-address-pools ${pools}"

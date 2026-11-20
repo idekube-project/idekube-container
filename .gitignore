@@ -2,6 +2,11 @@
 .cache/
 .codex
 
+# Local frontend builds (images build it in Docker; the QEMU VM's copy goes
+# to qemu-builder/.cache/qemu_tools/frontend-dist).
+frontend/dist/
+frontend/node_modules/
+
 # Private keys and certificates must never be committed.
 *.pem
 *.key

@@ -211,21 +211,28 @@ make test_all                         # universal lineup, parallel via pytest-xd
 make test_all_ascend                  # ascend lineup
 ```
 
-`tests/helpers/images.py` resolves locally-built or pushed image refs in the new per-flavor scheme from `VERSION` and `STAGING_POSTFIX` (unset `VERSION` falls back to the newest git tag, so set it). `LINEUP_BRANCHES`, `BRANCH_REPO`, and `BRANCH_DEPENDS_ON` mirror the bake config.
+`tests/helpers/images.py` resolves locally-built or pushed image refs in the new per-flavor scheme from `VERSION` and `STAGING_POSTFIX` (unset `VERSION` falls back to the newest git tag, so set it). `LINEUP_BRANCHES` and `BRANCH_REPO` mirror the bake config (`scripts/ci/tests/test_test_mirrors.py` checks it).
 
 - `--branch` takes one branch or a comma-separated list.
 - Without `--require-images`, branches whose image is missing are **skipped**. CI always passes `--require-images` (or `IDEKUBE_REQUIRE_IMAGES=1`): a missing image aborts the run (exit 3) and a session in which no test passed fails.
 - Run with `-n N --dist loadgroup` so each branch's tests share one worker and one container pool.
 - CI runs the suite through `.github/actions/run-tests` (uv, Playwright Chromium, optional `docker pull`, pytest, logs/screenshots uploaded on failure).
 
+The suite does not cover QEMU images (it drives containers through `docker exec` and their own ports). Their test is `make qemu-test BRANCH=featured/base` (or `featured/kathara`), `qemu-builder/scripts/shell/test_qemu.sh`: it needs KVM and boots the built image three times on one volume (invalid configuration refused, auth/services/SSH/hardening, clean power-off on `docker stop` with the data kept, `IDEKUBE_VM_RESET_DISK`, kathara's Docker address ranges). Run it after changing anything the VM uses: `qemu-builder/`, `artifacts/rootfs`, the featured overlay.
+
 ## Runtime Environment Variables
 
-- `IDEKUBE_INIT_HOME` — Initialize home from `/etc/skel`
+Boolean variables accept `true`/`false`, `1`/`0`, `yes`/`no`, `on`/`off` (any case); empty means unset, which a templated manifest produces for an omitted value. Any other value is a configuration error: the container prints which variable is wrong and exits. The parser is `artifacts/rootfs/usr/local/lib/idekube/env.sh` (an identical copy, `qemu-builder/artifacts/startup-scripts/idekube-env.sh`, serves the QEMU entrypoint; `scripts/ci/tests/test_env_flags.py` keeps them identical).
+
+- `IDEKUBE_INIT_HOME` — (boolean) Initialize home from `/etc/skel`; an empty home is always initialized
 - `IDEKUBE_PREFERED_SHELL` — Path to preferred shell
 - `IDEKUBE_USER_UID` — Override container user UID
 - `IDEKUBE_AUTHORIZED_KEYS` — Base64-encoded SSH authorized keys
 - `IDEKUBE_ACCESS_TOKEN` — Nginx-level web auth token (excludes `/ssh`). Letters, digits, `.`, `_`, `-` only, compared case-sensitively. `/authn.sh` re-renders the nginx map from the read-only template `/etc/idekube/nginx/access_token.conf.template` on every start; an invalid token makes the container exit (fail closed), and the image ships a deny-all map
-- `IDEKUBE_ROOTFS_RESET` — With `I_AM_INIT_CONTAINER`, re-seed an already initialized `/rootfs` volume (otherwise the init container skips it)
+- `I_AM_INIT_CONTAINER` — (boolean) Run as the init container that seeds a `/rootfs` volume, then exit
+- `IDEKUBE_ROOTFS_RESET` — (boolean) With `I_AM_INIT_CONTAINER`, re-seed an already initialized `/rootfs` volume (otherwise the init container skips it)
+
+QEMU images (`*-qemu` tags) take the variables above plus their own (`IDEKUBE_VM_*`: memory, CPUs, KVM, disk reset, shutdown timeout, the kathara VM's Docker address ranges); see `qemu-builder/README.md`, which also covers running them in Kubernetes.
 
 ## What's Gone
 

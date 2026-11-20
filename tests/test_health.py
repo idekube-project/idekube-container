@@ -16,6 +16,16 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("branch", get_branch_params(metafunc.config), indirect=False)
 
 
+def _describe(resp: requests.Response) -> str:
+    """Status, latency and body of a /health reply, for assertion messages.
+
+    The body names the unhealthy services; a reply after ~2 s means the
+    health server hit its own request deadline (the main service is then
+    reported unhealthy and the status is 502).
+    """
+    return f"HTTP {resp.status_code} after {resp.elapsed.total_seconds():.3f}s: {resp.text[:500]}"
+
+
 class TestHealthEndpoint:
     """Validate /health returns correct JSON for every image."""
 
@@ -25,7 +35,7 @@ class TestHealthEndpoint:
         attach_log(request.node, cm)
 
         resp = requests.get(f"{cm.base_url}/health", timeout=10)
-        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
+        assert resp.status_code == 200, f"Expected 200, got {_describe(resp)}"
         data = resp.json()
         assert "status" in data
         assert "services" in data
@@ -59,7 +69,7 @@ class TestHealthEndpoint:
         attach_log(request.node, cm)
 
         resp = requests.get(f"{cm.base_url}/health", timeout=10)
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Expected 200, got {_describe(resp)}"
 
 
 # How long programs get to settle (supervisord retries failing ones first).
