@@ -109,13 +109,48 @@ def _raw_get(base_url: str, raw_target: str) -> http.client.HTTPResponse:
 
 
 def _status_with_header(cm, token: str) -> int:
-    return http_requests.get(
-        f"{cm.base_url}/", headers={TOKEN_HEADER: token}, timeout=10, allow_redirects=False
-    ).status_code
+    # nginx closes connections it accepted but has not read yet when a worker
+    # shuts down (reload), so a reset is not an answer: ask again.
+    for attempt in range(5):
+        try:
+            return http_requests.get(
+                f"{cm.base_url}/", headers={TOKEN_HEADER: token}, timeout=10, allow_redirects=False
+            ).status_code
+        except http_requests.ConnectionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.2)
+
+
+# PIDs of nginx workers that still accept connections. A worker told to quit
+# retitles itself "worker process is shutting down" as it closes its
+# listening sockets, then serves only connections it already had.
+_ACCEPTING_NGINX_WORKERS = r"""
+for d in /proc/[0-9]*; do
+  t=$(tr '\0' ' ' < "$d/cmdline" 2>/dev/null) || continue
+  case "$t" in
+    *"shutting down"*) ;;
+    "nginx: worker process"*) echo "${d#/proc/}" ;;
+  esac
+done
+"""
+
+
+def _accepting_nginx_workers(cm) -> set[str]:
+    return set(cm.exec_run(["sh", "-c", _ACCEPTING_NGINX_WORKERS]).stdout.split())
 
 
 def _render_token(cm, token: str) -> None:
-    """Re-run authn.sh in the container with ``token``, then reload nginx."""
+    """Re-run authn.sh in the container with ``token``, then reload nginx.
+
+    Returns once only workers started with the new configuration accept
+    connections. On reload the nginx master starts the new workers first and
+    signals the old ones about 100 ms later, so for a while both answer:
+    the first 200 for ``token`` does not mean the previous token is already
+    rejected everywhere.
+    """
+    old_workers = _accepting_nginx_workers(cm)
+    assert old_workers, "found no nginx worker processes before the reload"
     rendered = subprocess.run(
         ["docker", "exec", "-e", f"IDEKUBE_ACCESS_TOKEN={token}", cm.container_id, "bash", "/authn.sh"],
         capture_output=True, text=True, timeout=30,
@@ -123,10 +158,19 @@ def _render_token(cm, token: str) -> None:
     assert rendered.returncode == 0, f"authn.sh failed: {rendered.stdout}{rendered.stderr}"
     reloaded = cm.exec_run(["nginx", "-s", "reload"])
     assert reloaded.returncode == 0, f"nginx reload failed: {reloaded.stderr}"
-    # Reload is asynchronous: wait until the new token is accepted. Workers
-    # restarting can briefly answer 502 or drop the connection, so wait for
-    # 200 rather than for "not 401".
+
     deadline = time.monotonic() + 20
+    while True:
+        workers = _accepting_nginx_workers(cm)
+        if workers and not workers & old_workers:
+            break
+        assert time.monotonic() < deadline, (
+            f"nginx reload did not replace its workers within 20s "
+            f"(before: {sorted(old_workers)}, now accepting: {sorted(workers)})"
+        )
+        time.sleep(0.1)
+    # Fresh workers can briefly answer 502 or drop the connection while they
+    # start, so wait for 200 rather than for "not 401".
     while _status_with_header(cm, token) != 200 and time.monotonic() < deadline:
         time.sleep(0.2)
 

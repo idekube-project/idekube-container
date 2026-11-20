@@ -200,6 +200,7 @@ def get_or_start_container(
         extra_env=extra_env,
         privileged=privileged,
         extra_ports={2222: allocate_port()},
+        log_name=key.replace("/", "-").replace(":", "-"),
     )
     cm.start()
     cm.wait_healthy()
@@ -320,7 +321,7 @@ def save_screenshot(item, page, name: str) -> Path | None:
 
 def attach_log(item, container: ContainerManager) -> None:
     """Register container log path for report attachment on failure."""
-    log_path = container.output_dir / "logs" / f"{container.slug}.log"
+    log_path = container.output_dir / "logs" / f"{container.log_name}.log"
     item.stash[_log_key] = str(log_path)
 
 

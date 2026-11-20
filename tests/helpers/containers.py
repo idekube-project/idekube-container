@@ -155,10 +155,14 @@ class ContainerManager:
         extra_env: dict[str, str] | None = None,
         privileged: bool = False,
         extra_ports: dict[int, int] | None = None,
+        log_name: str | None = None,
     ):
         self.image_ref = image_ref
         self.branch = branch
         self.slug = branch.replace("/", "-")
+        # Distinct per pooled container: a branch's default and auth
+        # containers must not overwrite each other's log file.
+        self.log_name = log_name or self.slug
         self.output_dir = output_dir
         self.extra_env = extra_env or {}
         self.privileged = privileged
@@ -287,7 +291,7 @@ class ContainerManager:
         try:
             logs_dir = self.output_dir / "logs"
             logs_dir.mkdir(parents=True, exist_ok=True)
-            log_path = logs_dir / f"{self.slug}.log"
+            log_path = logs_dir / f"{self.log_name}.log"
 
             result = subprocess.run(
                 ["docker", "logs", self.container_id],
