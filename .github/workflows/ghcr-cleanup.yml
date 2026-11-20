@@ -1,0 +1,77 @@
+name: ghcr-cleanup
+
+# GHCR retention. Weekly, delete what the candidate pipeline leaves behind once
+# its package version is older than 30 days (by updated_at):
+#   - "*-staging" tags. A version that also carries a release tag (a promoted
+#     candidate: v0.9.0-staging is v0.9.0) only loses the staging tag; a
+#     staging-only version is deleted together with its platform images.
+#   - untagged versions no kept image references: edge builds edge-staging
+#     moved away from, overwritten buildcache-* manifests, by-digest pushes of
+#     failed builds.
+# Kept regardless of age (scripts/ci/ghcr-retention-plan.sh): the edge
+# pointers bake currently tags, and the candidates of prereleases newer than
+# the latest release, which publish-production still has to promote. Release
+# tags, stable* and buildcache-* tags never match.
+#
+# The action reference-counts platform and attestation manifests, so children
+# shared with a kept image survive. Deleting needs the Admin role for this
+# repository under each package's "Manage Actions access".
+
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only report what would be deleted."
+        type: boolean
+        default: true
+      older_than:
+        description: "Minimum age, at least 7 days (e.g. '30 days', '6 weeks')."
+        type: string
+        default: "30 days"
+
+permissions: {}
+
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      packages: ${{ steps.plan.outputs.packages }}
+      exclude: ${{ steps.plan.outputs.exclude }}
+      older_than: ${{ steps.plan.outputs.older_than }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Packages and protected tags
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OLDER_THAN: ${{ inputs.older_than }}
+        run: scripts/ci/ghcr-retention-plan.sh
+
+  cleanup:
+    needs: plan
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    steps:
+      - uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          packages: ${{ needs.plan.outputs.packages }}
+          use-regex: true
+          delete-tags: '-staging$'
+          exclude-tags: ${{ needs.plan.outputs.exclude }}
+          delete-untagged: true
+          older-than: ${{ needs.plan.outputs.older_than }}
+          validate: true
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}

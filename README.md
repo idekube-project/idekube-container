@@ -50,6 +50,7 @@ This repository holds everything: the image sources under `images/`, the shared 
 | `.github/workflows/publish.yml` | Candidate builds + tests for `main` (`edge`), prereleases and dispatch |
 | `.github/workflows/_build.yml`  | Reusable pipeline: native per-platform builds by digest → merge → tests |
 | `.github/workflows/publish-production.yml` | Promotes a release's tested candidate by digest (builds nothing) |
+| `.github/workflows/ghcr-cleanup.yml` | Weekly GHCR retention: staging tags and unreferenced untagged versions older than 30 days |
 | `scripts/ci/bakeplan.py`        | CI plans from `bake --print`: affected targets, build matrix, digests, promotion |
 | `scripts/tag-stable.sh`         | Post-publish stable-tag aliasing helper              |
 | `qemu-builder/`                 | QEMU/Ansible nested-VM build pipeline                |
