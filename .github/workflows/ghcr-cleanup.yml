@@ -14,7 +14,9 @@ name: ghcr-cleanup
 # tags, stable* and buildcache-* tags never match.
 #
 # The action reference-counts platform and attestation manifests, so children
-# shared with a kept image survive. Deleting needs the Admin role for this
+# shared with a kept image survive. A dispatch with delete_ghosts also deletes
+# images none of whose platform manifests exist any more (they cannot be
+# pulled); scheduled runs leave those alone so a lost child stays visible. Deleting needs the Admin role for this
 # repository under each package's "Manage Actions access".
 
 on:
@@ -30,6 +32,10 @@ on:
         description: "Minimum age, at least 7 days (e.g. '30 days', '6 weeks')."
         type: string
         default: "30 days"
+      delete_ghosts:
+        description: "Also delete images whose platform manifests are all missing (unpullable)."
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -73,5 +79,6 @@ jobs:
           exclude-tags: ${{ needs.plan.outputs.exclude }}
           delete-untagged: true
           older-than: ${{ needs.plan.outputs.older_than }}
+          delete-ghost-images: ${{ github.event_name == 'workflow_dispatch' && inputs.delete_ghosts }}
           validate: true
           dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
