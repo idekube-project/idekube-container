@@ -67,7 +67,8 @@ RUN apt-get update && \
     libmount1 \
     libpixman-1-0 \
     libusb-1.0-0 \
-    libslirp0 && \
+    libslirp0 \
+    socat && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy QEMU deb from builder

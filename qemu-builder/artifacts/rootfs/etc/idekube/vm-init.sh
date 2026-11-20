@@ -27,6 +27,20 @@ if [ -f /etc/idekube/runtime-env ]; then
     set +a
 fi
 
+# Boolean parsing shared with the containers (artifacts/rootfs). startup.sh
+# already rejected malformed values before the VM booted; should one get
+# here anyway, it is treated as false so the rest of the setup (SSH keys,
+# password lock) still runs.
+INIT_HOME=0
+if [ -f /usr/local/lib/idekube/env.sh ]; then
+    # shellcheck source=/dev/null
+    . /usr/local/lib/idekube/env.sh
+    INIT_HOME=$(idekube_bool IDEKUBE_INIT_HOME) || {
+        echo "Warning: ignoring IDEKUBE_INIT_HOME"
+        INIT_HOME=0
+    }
+fi
+
 # ------------------------------------------------------
 # UID remapping
 # ------------------------------------------------------
@@ -91,7 +105,7 @@ chmod 750 "$HOME" 2>/dev/null || echo "Warning: Failed to set permissions on hom
 # Home initialization
 # ------------------------------------------------------
 home_contents=$(ls -A "$HOME" 2>/dev/null | grep -v '^lost+found$' || true)
-if [ -n "${IDEKUBE_INIT_HOME:-}" ] || [ -z "$home_contents" ]; then
+if [ "$INIT_HOME" = 1 ] || [ -z "$home_contents" ]; then
     echo "Initializing home folder"
     if [ -d /etc/skel ]; then
         rsync -al /etc/skel/ "$HOME/" 2>/dev/null || echo "Warning: Failed to sync skel to home"
@@ -128,6 +142,13 @@ else
     touch "$HOME/.ssh/authorized_keys"
 fi
 chown -R "$USER:$USER" "$HOME/.ssh" 2>/dev/null || echo "Warning: Failed to change ownership of .ssh"
+
+# ------------------------------------------------------
+# Lock the build-time password ("idekube"): key SSH and the passwordless
+# sudo rule keep working; the serial console no longer accepts a login.
+# startup.sh also drops cloud-init's chpasswd and sets lock_passwd.
+# ------------------------------------------------------
+passwd -l "$USER" >/dev/null 2>&1 && echo "Password of $USER locked" || echo "Warning: Failed to lock the password of $USER"
 
 # ------------------------------------------------------
 # Disable SSH password authentication

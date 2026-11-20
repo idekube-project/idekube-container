@@ -1,14 +1,46 @@
 #!/bin/bash
+#
+# run.sh — launch and supervise the IDEKube QEMU VM.
+#
+# Runs as the QEMU container's main process (startup.sh execs it) and in
+# build_qemu_root.sh's native mode. It stays in the foreground:
+#   - SSH (guest :22) and the nginx gateway (guest :80) are forwarded into the
+#     guest. Inside a container (IDEKUBE_VM_HOSTFWD_ADDR empty) they go
+#     through a loopback relay, see "Port forwarding" below.
+#   - SIGTERM/SIGINT/SIGHUP (docker stop, Pod deletion) power the guest off
+#     through ACPI and wait up to IDEKUBE_VM_SHUTDOWN_TIMEOUT seconds before
+#     QEMU is stopped, so the guest flushes its disks like a normal shutdown.
+#   - The container exits when QEMU does (including a poweroff inside the
+#     guest), or with an error if a port relay dies.
+#
+# Boolean variables take true/false, 1/0, yes/no, on/off; empty means unset;
+# anything else is a configuration error (see idekube-env.sh).
 
-# Parse configuration from environment variables
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=idekube-env.sh
+source "${SCRIPT_DIR}/idekube-env.sh"
+
 VM_MEMORY="${IDEKUBE_VM_MEMORY:-1G}"
 VM_CPU="${IDEKUBE_VM_CPU:-1}"
 VM_DISK_SIZE="${IDEKUBE_VM_DISK_SIZE:-}"
-EXPOSE_SSH_PORT="${IDEKUBE_SSH_PORT:-22}"
-EXPOSE_WEB_PORT="${IDEKUBE_WEB_PORT:-80}"
-# Address the SSH/HTTP port forwards listen on. Empty = all interfaces, which
-# the runtime container needs; build_qemu_root.sh sets 127.0.0.1.
+EXPOSE_SSH_PORT=$(idekube_uint IDEKUBE_SSH_PORT 22) || exit 1
+EXPOSE_WEB_PORT=$(idekube_uint IDEKUBE_WEB_PORT 80) || exit 1
+# Address the SSH/HTTP forwards listen on. Empty = all interfaces through the
+# loopback relay (the runtime container); build_qemu_root.sh's native mode
+# sets 127.0.0.1.
 HOSTFWD_ADDR="${IDEKUBE_VM_HOSTFWD_ADDR:-}"
+
+HEADLESS=$(idekube_bool IDEKUBE_VM_HEADLESS 1) || exit 1
+DISABLE_KVM=$(idekube_bool IDEKUBE_VM_DISABLE_KVM) || exit 1
+REQUIRE_KVM=$(idekube_bool IDEKUBE_VM_REQUIRE_KVM) || exit 1
+SHUTDOWN_TIMEOUT=$(idekube_uint IDEKUBE_VM_SHUTDOWN_TIMEOUT 25) || exit 1
+
+for port in "${EXPOSE_SSH_PORT}" "${EXPOSE_WEB_PORT}"; do
+    if (( port < 1 || port > 65535 )); then
+        echo "Error: port ${port} (IDEKUBE_SSH_PORT/IDEKUBE_WEB_PORT) is out of range" >&2
+        exit 1
+    fi
+done
 
 # QEMU monitor. It needs no credentials and can pause the VM or read guest
 # memory, so it is never exposed on the network: by default it is a unix
@@ -23,35 +55,50 @@ else
     MONITOR_OPTS="unix:${MONITOR_SOCKET},server,nowait"
     MONITOR_DESC="unix socket ${MONITOR_SOCKET}"
 fi
+# QMP socket used only by this script, to power the guest off on SIGTERM.
+QMP_SOCKET="./qemu-qmp.sock"
 
+# ---------------------------------------------------------------------------
+# Accelerator
+# ---------------------------------------------------------------------------
+# KVM is used when /dev/kvm can actually be opened read-write, which also
+# catches a device node that exists without permission to use it.
+# IDEKUBE_VM_REQUIRE_KVM=true turns "no KVM" into a startup error instead of
+# a slow software-emulated VM.
+if [[ "${DISABLE_KVM}" == "1" && "${REQUIRE_KVM}" == "1" ]]; then
+    echo "Error: IDEKUBE_VM_DISABLE_KVM and IDEKUBE_VM_REQUIRE_KVM are both true" >&2
+    exit 1
+fi
 
-# Helper function to parse boolean flags
-parse_bool() {
-    local value=$(echo "$1" | tr '[:upper:]' '[:lower:]')
-    case "${value}" in
-        1|true|yes|on) echo "1" ;;
-        0|false|no|off|"") echo "0" ;;
-        *) echo "0" ;;
-    esac
+kvm_unusable_reason() {
+    if [[ ! -e /dev/kvm ]]; then
+        echo "/dev/kvm does not exist (no KVM on this host, or the container was started without --device /dev/kvm)"
+    elif ! ( exec 3<>/dev/kvm ) 2>/dev/null; then
+        echo "/dev/kvm exists but uid $(id -u) cannot open it read-write"
+    fi
 }
 
-HEADLESS=$(parse_bool "${IDEKUBE_VM_HEADLESS:-1}")
-DISABLE_KVM=$(parse_bool "${IDEKUBE_VM_DISABLE_KVM:-0}")
-
-# Detect accelerator
 ARCH=$(uname -m)
 if [[ "$(uname)" == "Darwin" ]]; then
     ACCELERATOR=" -accel hvf "
     CPU_TYPE="host"
 elif [[ "$(uname)" == "Linux" ]]; then
-    if [[ "${DISABLE_KVM}" != "1" ]] && [[ -e /dev/kvm ]] && {
-        [[ -d /sys/module/kvm ]] || { command -v lsmod >/dev/null 2>&1 && lsmod | grep -q kvm; }
-    }; then
+    KVM_REASON=""
+    if [[ "${DISABLE_KVM}" == "1" ]]; then
+        KVM_REASON="IDEKUBE_VM_DISABLE_KVM is true"
+    else
+        KVM_REASON=$(kvm_unusable_reason)
+    fi
+    if [[ -z "${KVM_REASON}" ]]; then
         ACCELERATOR=" -accel kvm "
         CPU_TYPE="host"
     else
+        if [[ "${REQUIRE_KVM}" == "1" ]]; then
+            echo "Error: IDEKUBE_VM_REQUIRE_KVM is true but KVM is not usable: ${KVM_REASON}" >&2
+            exit 1
+        fi
         ACCELERATOR=""
-        echo "Warning: /dev/kvm not found, KVM acceleration disabled" >&2
+        echo "Warning: KVM acceleration disabled (${KVM_REASON}); using software emulation" >&2
         if [[ "${ARCH}" == "arm64" || "${ARCH}" == "aarch64" ]]; then
             CPU_TYPE="cortex-a72"
         elif [[ "${ARCH}" == "x86_64" ]]; then
@@ -99,13 +146,43 @@ else
     exit 1
 fi
 
-# Check if user network backend is available
+# ---------------------------------------------------------------------------
+# Port forwarding
+# ---------------------------------------------------------------------------
+# libslirp hands a forwarded connection to the guest with its real source
+# address, unless that address is loopback (then the guest sees 10.0.2.2).
+# A source such as Docker's bridge gateway 172.17.0.1, or an ingress Pod IP,
+# collides with any guest network covering it: with Docker running in the
+# guest (featured/kathara), docker0 = 172.17.0.1/16 makes the guest drop
+# every forwarded SYN as a martian. So inside a container the forwards
+# listen on loopback only and socat relays the published ports to them: the
+# guest always sees 10.0.2.2, whatever the cluster's address plan.
+SLIRP_SSH_PORT=61022
+SLIRP_WEB_PORT=61080
+if [[ -z "${HOSTFWD_ADDR}" ]]; then
+    RELAY=1
+    SLIRP_ADDR=127.0.0.1
+    if [[ " ${EXPOSE_SSH_PORT} ${EXPOSE_WEB_PORT} " == *" ${SLIRP_SSH_PORT} "* || " ${EXPOSE_SSH_PORT} ${EXPOSE_WEB_PORT} " == *" ${SLIRP_WEB_PORT} "* ]]; then
+        echo "Error: ports ${SLIRP_SSH_PORT} and ${SLIRP_WEB_PORT} are reserved for the internal relay; choose other IDEKUBE_SSH_PORT/IDEKUBE_WEB_PORT values" >&2
+        exit 1
+    fi
+    if ! command -v socat >/dev/null 2>&1; then
+        echo "Error: socat is required to relay ports into the VM" >&2
+        exit 1
+    fi
+else
+    RELAY=0
+    SLIRP_ADDR="${HOSTFWD_ADDR}"
+    SLIRP_SSH_PORT="${EXPOSE_SSH_PORT}"
+    SLIRP_WEB_PORT="${EXPOSE_WEB_PORT}"
+fi
+
 NETWORK_OPTS=""
 if ${QEMU_BIN} -machine ${MACHINE_TYPE} -netdev help 2>&1 | grep -q "user"; then
     # Only SSH (key auth) and the nginx gateway (token auth) are forwarded.
     # VNC stays inside the guest: it has no password and noVNC reaches it
     # through the gateway's /vnc route.
-    NETWORK_OPTS="-netdev user,id=net0,hostfwd=tcp:${HOSTFWD_ADDR}:${EXPOSE_SSH_PORT}-:22,hostfwd=tcp:${HOSTFWD_ADDR}:${EXPOSE_WEB_PORT}-:80 -device virtio-net-pci,netdev=net0,disable-modern=off,disable-legacy=on"
+    NETWORK_OPTS="-netdev user,id=net0,hostfwd=tcp:${SLIRP_ADDR}:${SLIRP_SSH_PORT}-:22,hostfwd=tcp:${SLIRP_ADDR}:${SLIRP_WEB_PORT}-:80 -device virtio-net-pci,netdev=net0,disable-modern=off,disable-legacy=on"
 else
     echo "Warning: 'user' network backend not available, networking will be disabled" >&2
     NETWORK_OPTS=""
@@ -165,13 +242,63 @@ if [[ -n "${VM_DISK_SIZE}" ]]; then
     fi
 fi
 
+# ---------------------------------------------------------------------------
+# Start and supervise
+# ---------------------------------------------------------------------------
+RELAY_PIDS=()
+QEMU_PID=""
+SHUTTING_DOWN=0
+RELAY_FAILED=0
+
+qmp() {
+    printf '{"execute":"qmp_capabilities"}\n{"execute":"%s"}\n' "$1" \
+        | socat -t 5 - "UNIX-CONNECT:${QMP_SOCKET}" >/dev/null 2>&1
+}
+
+shutdown_vm() {
+    (( SHUTTING_DOWN )) && return
+    SHUTTING_DOWN=1
+    if [[ -z "${QEMU_PID}" ]]; then
+        # Signalled before QEMU was started: nothing to power off.
+        for pid in "${RELAY_PIDS[@]}"; do kill "${pid}" 2>/dev/null; done
+        exit 0
+    fi
+    kill -0 "${QEMU_PID}" 2>/dev/null || return
+    echo "Stopping: asking the guest to power off (up to ${SHUTDOWN_TIMEOUT}s)..." >&2
+    if ! qmp system_powerdown; then
+        echo "Warning: could not reach QMP at ${QMP_SOCKET} to power the guest off" >&2
+    fi
+    local waited=0
+    while kill -0 "${QEMU_PID}" 2>/dev/null && (( waited < SHUTDOWN_TIMEOUT )); do
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if kill -0 "${QEMU_PID}" 2>/dev/null; then
+        echo "Guest did not power off within ${SHUTDOWN_TIMEOUT}s; stopping QEMU." >&2
+        qmp quit || true
+        sleep 2
+        kill -TERM "${QEMU_PID}" 2>/dev/null || true
+    else
+        echo "Guest powered off." >&2
+    fi
+}
+trap shutdown_vm TERM INT HUP
+
+if (( RELAY )); then
+    socat "TCP-LISTEN:${EXPOSE_SSH_PORT},fork,reuseaddr" "TCP:127.0.0.1:${SLIRP_SSH_PORT}" &
+    RELAY_PIDS+=($!)
+    socat "TCP-LISTEN:${EXPOSE_WEB_PORT},fork,reuseaddr" "TCP:127.0.0.1:${SLIRP_WEB_PORT}" &
+    RELAY_PIDS+=($!)
+    echo "Relaying :${EXPOSE_SSH_PORT} and :${EXPOSE_WEB_PORT} to the VM through loopback"
+fi
+
 echo "Starting QEMU with monitor on ${MONITOR_DESC}..."
 
-# exec so QEMU replaces this bash wrapper: build_qemu_root.sh captures $! as
-# VM_PID and later sends SIGTERM to it during cleanup; without exec, that
-# signal would only kill the bash wrapper and orphan QEMU. Also makes the
-# container entrypoint (startup.sh → run.sh) forward docker stop cleanly.
-exec ${QEMU_BIN} \
+# Not exec'd: this script must outlive QEMU's start to turn SIGTERM into an
+# ACPI power-off. <&0 keeps the serial console on the container's stdin
+# (a background job would otherwise get /dev/null).
+# shellcheck disable=SC2086  # option strings are split on purpose
+${QEMU_BIN} \
     -M ${MACHINE_TYPE} \
     ${FIRMWARE_OPTS} \
     -cpu ${CPU_TYPE} \
@@ -180,8 +307,37 @@ exec ${QEMU_BIN} \
     -smp ${VM_CPU},sockets=1,cores=${VM_CPU},threads=1 \
     ${GRAPHICS_OPTS} \
     -monitor "${MONITOR_OPTS}" \
+    -qmp "unix:${QMP_SOCKET},server=on,wait=off" \
     -serial mon:stdio \
     -drive file=./images/root.img,format=qcow2,if=virtio,cache=writethrough,index=0,media=disk \
     -drive file=./configs/cloud-init.iso,index=1,media=cdrom \
     -boot order=c \
-    ${NETWORK_OPTS}
+    ${NETWORK_OPTS} <&0 &
+QEMU_PID=$!
+
+# Poll instead of a bare `wait`: a trapped signal interrupts `wait` on the
+# short sleep immediately, and a dead relay is noticed within a second.
+while kill -0 "${QEMU_PID}" 2>/dev/null; do
+    for pid in "${RELAY_PIDS[@]}"; do
+        if (( ! SHUTTING_DOWN )) && ! kill -0 "${pid}" 2>/dev/null; then
+            echo "Error: port relay (pid ${pid}) exited; shutting the VM down" >&2
+            RELAY_FAILED=1
+            shutdown_vm
+        fi
+    done
+    sleep 1 &
+    wait $! 2>/dev/null
+done
+wait "${QEMU_PID}"
+QEMU_STATUS=$?
+
+for pid in "${RELAY_PIDS[@]}"; do
+    kill "${pid}" 2>/dev/null || true
+done
+
+if (( RELAY_FAILED )); then
+    exit 1
+elif (( SHUTTING_DOWN )); then
+    exit 0
+fi
+exit "${QEMU_STATUS}"
